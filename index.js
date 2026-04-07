@@ -5,7 +5,7 @@ const { Client, GatewayIntentBits, PermissionsBitField, Events, EmbedBuilder } =
 const sqlite3 = require('sqlite3').verbose();
 
 // =====================
-// EXPRESS (RAILWAY)
+// EXPRESS
 // =====================
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,28 +15,36 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🌐 Web activa en puerto ${PORT}`);
+    console.log(`🌐 Web activa`);
 });
 
 // =====================
 // DATABASE
 // =====================
-const db = new sqlite3.Database('./warns.db');
-
-// WARNS
-db.run(`CREATE TABLE IF NOT EXISTS warns (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    userId TEXT,
-    userTag TEXT,
-    reason TEXT,
-    date TEXT
-)`);
+const db = new sqlite3.Database('./data.db');
 
 // ECONOMY
 db.run(`CREATE TABLE IF NOT EXISTS economy (
     userId TEXT PRIMARY KEY,
     balance INTEGER
 )`);
+
+// PURCHASES
+db.run(`CREATE TABLE IF NOT EXISTS purchases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId TEXT,
+    item TEXT,
+    price INTEGER,
+    date TEXT
+)`);
+
+// =====================
+// COOLDOWNS
+// =====================
+const cooldowns = {
+    work: new Map(),
+    daily: new Map()
+};
 
 // =====================
 // ECONOMY FUNCTIONS
@@ -67,40 +75,23 @@ const client = new Client({
 });
 
 // =====================
-// EMBED FACTORY PRO
+// EMBED
 // =====================
-function createLogEmbed({ title, color, user, moderator, reason, extra, message }) {
-    const embed = new EmbedBuilder()
+function createEmbed(title, color, fields, message, user) {
+    return new EmbedBuilder()
         .setAuthor({
-            name: "Lunaris Moderation",
+            name: "Lunaris System",
             iconURL: message.guild.iconURL()
         })
         .setTitle(title)
         .setColor(color)
+        .setThumbnail(user?.displayAvatarURL())
+        .addFields(fields)
         .setFooter({
-            text: "Lunaris Core • Sistema de Logs",
+            text: "Lunaris Core",
             iconURL: message.client.user.displayAvatarURL()
         })
         .setTimestamp();
-
-    if (user) {
-        embed.setThumbnail(user.displayAvatarURL());
-        embed.addFields({ name: "👤 Usuario", value: `${user}`, inline: true });
-    }
-
-    if (moderator) {
-        embed.addFields({ name: "👮 Moderador", value: `${moderator}`, inline: true });
-    }
-
-    if (reason) {
-        embed.addFields({ name: "📝 Razón", value: reason });
-    }
-
-    if (extra) {
-        embed.addFields(extra);
-    }
-
-    return embed;
 }
 
 // =====================
@@ -122,7 +113,7 @@ client.on(Events.MessageCreate, async (message) => {
     const logChannel = await message.client.channels.fetch("1480726976984518839");
 
     // =====================
-    // ECONOMY
+    // BALANCE
     // =====================
     if (command === '!balance') {
         getUser(message.author.id, (data) => {
@@ -130,157 +121,133 @@ client.on(Events.MessageCreate, async (message) => {
         });
     }
 
+    // =====================
+    // WORK (COOLDOWN)
+    // =====================
     if (command === '!work') {
+        const userId = message.author.id;
+        const now = Date.now();
+        const cooldown = 60 * 1000;
+
+        if (cooldowns.work.has(userId)) {
+            const expiration = cooldowns.work.get(userId) + cooldown;
+
+            if (now < expiration) {
+                const timeLeft = ((expiration - now) / 1000).toFixed(0);
+                return message.reply(`⏳ Espera ${timeLeft}s`);
+            }
+        }
+
+        cooldowns.work.set(userId, now);
+
         const amount = Math.floor(Math.random() * 100) + 50;
 
-        getUser(message.author.id, () => {
-            updateBalance(message.author.id, amount);
+        getUser(userId, () => {
+            updateBalance(userId, amount);
         });
 
         message.reply(`💼 Ganaste ${amount} monedas`);
     }
 
+    // =====================
+    // DAILY (COOLDOWN)
+    // =====================
     if (command === '!daily') {
-        const amount = 200;
+        const userId = message.author.id;
+        const now = Date.now();
+        const cooldown = 24 * 60 * 60 * 1000;
 
-        getUser(message.author.id, () => {
-            updateBalance(message.author.id, amount);
-        });
+        if (cooldowns.daily.has(userId)) {
+            const expiration = cooldowns.daily.get(userId) + cooldown;
 
-        message.reply(`🎁 Daily recibido: ${amount}`);
-    }
-
-    if (command === '!give') {
-        const user = message.mentions.users.first();
-        const amount = parseInt(args[2]);
-
-        if (!user || !amount) return message.reply("Uso: !give @user cantidad");
-
-        getUser(message.author.id, (data) => {
-            if (data.balance < amount) {
-                return message.reply("❌ No tienes suficiente dinero");
+            if (now < expiration) {
+                const timeLeft = ((expiration - now) / 1000 / 60).toFixed(1);
+                return message.reply(`⏳ Vuelve en ${timeLeft} min`);
             }
-
-            updateBalance(message.author.id, -amount);
-            updateBalance(user.id, amount);
-
-            message.reply(`💸 Transferiste ${amount} a ${user.tag}`);
-        });
-    }
-
-    // =====================
-    // MODERACIÓN
-    // =====================
-
-    if (command === '!clear') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-            return message.reply('❌ No tienes permisos');
         }
 
-        const amount = parseInt(args[1]);
-        if (!amount) return message.reply('⚠️ Escribe un número');
+        cooldowns.daily.set(userId, now);
 
-        await message.channel.bulkDelete(amount, true);
+        const amount = 200;
 
-        const embed = createLogEmbed({
-            title: "🧹 Limpieza de Mensajes",
-            color: "#8e44ad",
-            moderator: message.author,
-            extra: [
-                { name: "📦 Cantidad", value: `${amount}`, inline: true },
-                { name: "📍 Canal", value: `${message.channel}`, inline: true }
+        getUser(userId, () => {
+            updateBalance(userId, amount);
+        });
+
+        message.reply(`🎁 Daily: ${amount}`);
+    }
+
+    // =====================
+    // SHOP
+    // =====================
+    if (command === '!shop') {
+        const embed = createEmbed(
+            "🛒 Tienda Lunaris",
+            "#9b59b6",
+            [
+                { name: "🌟 VRChat Plus (1 mes)", value: "💰 5000 monedas" }
             ],
             message
-        });
-
-        logChannel.send({ embeds: [embed] });
-    }
-
-    if (command === '!warn') {
-        const user = message.mentions.users.first();
-        const reason = args.slice(2).join(' ') || "Sin razón";
-
-        db.run(
-            `INSERT INTO warns (userId, userTag, reason, date) VALUES (?, ?, ?, ?)`,
-            [user.id, user.tag, reason, new Date().toLocaleString()]
         );
 
-        const embed = createLogEmbed({
-            title: "⚠️ Advertencia",
-            color: "#f39c12",
-            user,
-            moderator: message.author,
-            reason,
-            message
-        });
-
-        logChannel.send({ embeds: [embed] });
+        message.reply({ embeds: [embed] });
     }
 
-    if (command === '!ban') {
-        const user = message.mentions.members.first();
-        const reason = args.slice(2).join(' ') || "Sin razón";
+    // =====================
+    // BUY
+    // =====================
+    if (command === '!buy') {
+        const price = 5000;
 
-        await user.ban({ reason });
+        getUser(message.author.id, (data) => {
+            if (data.balance < price) {
+                return message.reply("❌ No tienes suficientes monedas");
+            }
 
-        const embed = createLogEmbed({
-            title: "🔨 Usuario Baneado",
-            color: "#e74c3c",
-            user: user.user,
-            moderator: message.author,
-            reason,
-            message
+            updateBalance(message.author.id, -price);
+
+            db.run(
+                `INSERT INTO purchases (userId, item, price, date) VALUES (?, ?, ?, ?)`,
+                [message.author.id, "VRChat Plus (1 mes)", price, new Date().toLocaleString()]
+            );
+
+            message.reply("🛒 Compraste VRChat Plus");
+
+            const embed = createEmbed(
+                "🛒 Compra",
+                "#00ffcc",
+                [
+                    { name: "👤 Usuario", value: `${message.author}` },
+                    { name: "🎁 Producto", value: "VRChat Plus" },
+                    { name: "💰 Precio", value: `${price}` }
+                ],
+                message,
+                message.author
+            );
+
+            logChannel.send({ embeds: [embed] });
         });
-
-        logChannel.send({ embeds: [embed] });
     }
 
-    if (command === '!kick') {
-        const user = message.mentions.members.first();
-        const reason = args.slice(2).join(' ') || "Sin razón";
+    // =====================
+    // CLEAR
+    // =====================
+    if (command === '!clear') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return;
 
-        await user.kick(reason);
+        const amount = parseInt(args[1]);
+        await message.channel.bulkDelete(amount, true);
 
-        const embed = createLogEmbed({
-            title: "👢 Usuario Expulsado",
-            color: "#c0392b",
-            user: user.user,
-            moderator: message.author,
-            reason,
-            message
-        });
-
-        logChannel.send({ embeds: [embed] });
-    }
-
-    if (command === '!mute') {
-        const user = message.mentions.members.first();
-
-        await user.timeout(10 * 60 * 1000);
-
-        const embed = createLogEmbed({
-            title: "🔇 Usuario Silenciado",
-            color: "#7f8c8d",
-            user: user.user,
-            moderator: message.author,
-            message
-        });
-
-        logChannel.send({ embeds: [embed] });
-    }
-
-    if (command === '!unmute') {
-        const user = message.mentions.members.first();
-
-        await user.timeout(null);
-
-        const embed = createLogEmbed({
-            title: "🔊 Usuario Desmuteado",
-            color: "#2ecc71",
-            user: user.user,
-            moderator: message.author,
-            message
-        });
+        const embed = createEmbed(
+            "🧹 Limpieza",
+            "#8e44ad",
+            [
+                { name: "👮 Admin", value: `${message.author}` },
+                { name: "📦 Cantidad", value: `${amount}` }
+            ],
+            message,
+            message.author
+        );
 
         logChannel.send({ embeds: [embed] });
     }
