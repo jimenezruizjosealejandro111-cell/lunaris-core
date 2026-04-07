@@ -1,24 +1,7 @@
 require('dotenv').config();
 
-const express = require('express');
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, Events } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
-
-// =====================
-// EXPRESS (IMPORTANTE PARA RAILWAY)
-// =====================
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Ruta base (esto evita el 502)
-app.get('/', (req, res) => {
-    res.send("🚀 Lunaris Core activo");
-});
-
-// Iniciar servidor web
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🌐 Web corriendo en puerto ${PORT}`);
-});
 
 // =====================
 // DATABASE
@@ -60,7 +43,9 @@ client.on(Events.MessageCreate, async (message) => {
     const args = message.content.split(' ');
     const command = args[0];
 
+    // =====================
     // CLEAR
+    // =====================
     if (command === '!clear') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
             return message.reply('❌ No tienes permisos');
@@ -73,7 +58,9 @@ client.on(Events.MessageCreate, async (message) => {
         message.reply(`🧹 ${amount} mensajes eliminados`);
     }
 
+    // =====================
     // WARN
+    // =====================
     if (command === '!warn') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
             return message.reply('❌ Sin permisos');
@@ -92,14 +79,16 @@ client.on(Events.MessageCreate, async (message) => {
         message.reply(`⚠️ ${user.tag} fue advertido`);
     }
 
+    // =====================
     // VER WARNS
+    // =====================
     if (command === '!warns') {
         const user = message.mentions.users.first();
         if (!user) return message.reply('⚠️ Menciona a alguien');
 
         db.all(`SELECT * FROM warns WHERE userId = ?`, [user.id], (err, rows) => {
             if (!rows || rows.length === 0) {
-                return message.reply('✅ Sin warns');
+                return message.reply('✅ Este usuario no tiene warns');
             }
 
             let msg = `📋 Warns de ${user.tag}\n`;
@@ -112,7 +101,9 @@ client.on(Events.MessageCreate, async (message) => {
         });
     }
 
+    // =====================
     // CLEAR WARNS
+    // =====================
     if (command === '!clearwarns') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
             return message.reply('❌ Sin permisos');
@@ -123,7 +114,7 @@ client.on(Events.MessageCreate, async (message) => {
 
         db.run(`DELETE FROM warns WHERE userId = ?`, [user.id]);
 
-        message.reply(`🧹 Warns eliminados`);
+        message.reply(`🧹 Warns de ${user.tag} eliminados`);
     }
 });
 
@@ -133,6 +124,6 @@ client.on(Events.MessageCreate, async (message) => {
 client.login(process.env.TOKEN);
 
 // =====================
-// DASHBOARD
+// DASHBOARD (AQUÍ CORRE EXPRESS)
 // =====================
 require('./dashboard');
