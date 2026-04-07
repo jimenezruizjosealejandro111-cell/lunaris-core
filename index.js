@@ -10,11 +10,53 @@ const sqlite3 = require('sqlite3').verbose();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 🌐 DASHBOARD WEB
 app.get('/', (req, res) => {
-    res.send("🚀 Lunaris Core activo");
+    res.send(`
+    <html>
+    <head>
+        <title>Lunaris Dashboard</title>
+        <style>
+            body {
+                background: #0f0f1a;
+                color: white;
+                font-family: Arial;
+                text-align: center;
+                padding: 50px;
+            }
+            .card {
+                background: #1e1e2f;
+                padding: 20px;
+                border-radius: 10px;
+                margin: 10px;
+                display: inline-block;
+            }
+            a {
+                color: #9b59b6;
+                text-decoration: none;
+            }
+        </style>
+    </head>
+    <body>
+
+        <h1>🌙 Lunaris Core Dashboard</h1>
+
+        <div class="card">
+            <h2>🤖 Estado</h2>
+            <p>Online</p>
+        </div>
+
+        <div class="card">
+            <h2>💰 Economía</h2>
+            <p><a href="/logs">Ver compras</a></p>
+        </div>
+
+    </body>
+    </html>
+    `);
 });
 
-// dashboard logs
+// 📊 LOGS API
 app.get('/logs', (req, res) => {
     db.all("SELECT * FROM purchases ORDER BY id DESC LIMIT 20", [], (err, rows) => {
         res.json(rows);
@@ -116,7 +158,6 @@ client.on(Events.GuildMemberAdd, async (member) => {
 
     await member.roles.add(roleId);
 
-    // bienvenida
     welcomeChannel.send({
         embeds: [
             new EmbedBuilder()
@@ -128,7 +169,6 @@ client.on(Events.GuildMemberAdd, async (member) => {
         ]
     });
 
-    // log
     logChannel.send({
         embeds: [
             new EmbedBuilder()
@@ -144,7 +184,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
 });
 
 // =====================
-// LOG: MENSAJE ELIMINADO
+// LOG: DELETE
 // =====================
 client.on(Events.MessageDelete, async (message) => {
     if (!message.guild || message.author?.bot) return;
@@ -176,7 +216,7 @@ client.on(Events.MessageDelete, async (message) => {
 });
 
 // =====================
-// LOG: MENSAJE EDITADO
+// LOG: EDIT
 // =====================
 client.on(Events.MessageUpdate, async (oldMsg, newMsg) => {
     if (!oldMsg.guild || oldMsg.author?.bot) return;
@@ -200,24 +240,6 @@ client.on(Events.MessageUpdate, async (oldMsg, newMsg) => {
 });
 
 // =====================
-// LOG: ROLES
-// =====================
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-    const logChannel = await newMember.guild.channels.fetch(LOGS.roles);
-
-    const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
-    const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id));
-
-    added.forEach(role => {
-        logChannel.send(`➕ ${newMember.user.tag} recibió ${role.name}`);
-    });
-
-    removed.forEach(role => {
-        logChannel.send(`➖ ${newMember.user.tag} perdió ${role.name}`);
-    });
-});
-
-// =====================
 // COMMANDS
 // =====================
 client.on(Events.MessageCreate, async (message) => {
@@ -228,14 +250,12 @@ client.on(Events.MessageCreate, async (message) => {
 
     const logChannel = await message.client.channels.fetch(LOGS.general);
 
-    // BALANCE
     if (command === '!balance') {
         getUser(message.author.id, (data) => {
             message.reply(`💰 ${data.balance} monedas`);
         });
     }
 
-    // WORK 20 MIN
     if (command === '!work') {
         const userId = message.author.id;
         const now = Date.now();
@@ -258,19 +278,16 @@ client.on(Events.MessageCreate, async (message) => {
         message.reply(`💼 Ganaste ${amount}`);
     }
 
-    // DAILY
     if (command === '!daily') {
         const amount = 200;
         getUser(message.author.id, () => updateBalance(message.author.id, amount));
         message.reply(`🎁 Daily: ${amount}`);
     }
 
-    // SHOP
     if (command === '!shop') {
         message.reply("🛒 VRChat Plus — 5000 monedas");
     }
 
-    // BUY
     if (command === '!buy') {
         const price = 5000;
 
@@ -283,44 +300,6 @@ client.on(Events.MessageCreate, async (message) => {
 
             logChannel.send(`🛒 ${message.author.tag} compró VRChat Plus`);
         });
-    }
-
-    // WARN AUTO
-    if (command === '!warn') {
-        const member = message.mentions.members.first();
-        if (!member) return message.reply("⚠️ menciona a alguien");
-
-        db.run(
-            `INSERT INTO warns (userId, userTag, reason, date) VALUES (?, ?, ?, ?)`,
-            [member.id, member.user.tag, "Warn", new Date().toLocaleString()]
-        );
-
-        db.all(`SELECT * FROM warns WHERE userId = ?`, [member.id], async (err, rows) => {
-            const total = rows.length;
-
-            message.reply(`⚠️ ${member.user.tag} tiene ${total} warns`);
-
-            if (total === 3) {
-                await member.timeout(600000);
-                message.channel.send("🔇 Mute automático");
-            }
-
-            if (total >= 10) {
-                await member.ban();
-                db.run(`DELETE FROM warns WHERE userId = ?`, [member.id]);
-                message.channel.send("🔨 Ban automático");
-            }
-        });
-    }
-
-    // CLEAR
-    if (command === '!clear') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return;
-
-        const amount = parseInt(args[1]);
-        await message.channel.bulkDelete(amount, true);
-
-        logChannel.send(`🧹 ${amount} mensajes borrados`);
     }
 });
 
