@@ -32,7 +32,7 @@ db.run(`CREATE TABLE IF NOT EXISTS warns (
 )`);
 
 // =====================
-// DISCORD CLIENT
+// CLIENT
 // =====================
 const client = new Client({
     intents: [
@@ -42,12 +42,52 @@ const client = new Client({
     ]
 });
 
+// =====================
+// EMBED FACTORY PRO
+// =====================
+function createLogEmbed({ title, color, user, moderator, reason, extra, message }) {
+    const embed = new EmbedBuilder()
+        .setAuthor({
+            name: "Lunaris Moderation",
+            iconURL: message.guild.iconURL()
+        })
+        .setTitle(title)
+        .setColor(color)
+        .setFooter({
+            text: "Lunaris Core • Sistema de Logs",
+            iconURL: message.client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    if (user) {
+        embed.setThumbnail(user.displayAvatarURL());
+        embed.addFields({ name: "👤 Usuario", value: `${user}`, inline: true });
+    }
+
+    if (moderator) {
+        embed.addFields({ name: "👮 Moderador", value: `${moderator}`, inline: true });
+    }
+
+    if (reason) {
+        embed.addFields({ name: "📝 Razón", value: reason });
+    }
+
+    if (extra) {
+        embed.addFields(extra);
+    }
+
+    return embed;
+}
+
+// =====================
+// READY
+// =====================
 client.once(Events.ClientReady, () => {
     console.log(`🤖 ${client.user.tag} online`);
 });
 
 // =====================
-// COMANDOS
+// COMMANDS
 // =====================
 client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
@@ -55,7 +95,6 @@ client.on(Events.MessageCreate, async (message) => {
     const args = message.content.split(' ');
     const command = args[0];
 
-    // 🔥 LOG CHANNEL FIX DEFINITIVO
     const logChannel = await message.client.channels.fetch("1480726976984518839");
 
     // =====================
@@ -70,18 +109,18 @@ client.on(Events.MessageCreate, async (message) => {
         if (!amount) return message.reply('⚠️ Escribe un número');
 
         await message.channel.bulkDelete(amount, true);
-
         message.reply(`🧹 ${amount} mensajes eliminados`);
 
-        const embed = new EmbedBuilder()
-            .setTitle('🧹 CLEAR')
-            .setColor('Purple')
-            .addFields(
-                { name: '👮 Admin', value: message.author.tag },
-                { name: '📦 Cantidad', value: `${amount}` },
-                { name: '📍 Canal', value: message.channel.name }
-            )
-            .setTimestamp();
+        const embed = createLogEmbed({
+            title: "🧹 Limpieza de Mensajes",
+            color: "#8e44ad",
+            moderator: message.author,
+            extra: [
+                { name: "📦 Cantidad", value: `${amount}`, inline: true },
+                { name: "📍 Canal", value: `${message.channel}`, inline: true }
+            ],
+            message
+        });
 
         logChannel.send({ embeds: [embed] });
     }
@@ -106,15 +145,14 @@ client.on(Events.MessageCreate, async (message) => {
 
         message.reply(`⚠️ ${user.tag} fue advertido`);
 
-        const embed = new EmbedBuilder()
-            .setTitle('⚠️ WARN')
-            .setColor('Orange')
-            .addFields(
-                { name: '👤 Usuario', value: user.tag },
-                { name: '👮 Admin', value: message.author.tag },
-                { name: '📝 Razón', value: reason }
-            )
-            .setTimestamp();
+        const embed = createLogEmbed({
+            title: "⚠️ Advertencia",
+            color: "#f39c12",
+            user,
+            moderator: message.author,
+            reason,
+            message
+        });
 
         logChannel.send({ embeds: [embed] });
     }
@@ -133,18 +171,16 @@ client.on(Events.MessageCreate, async (message) => {
         const reason = args.slice(2).join(' ') || "Sin razón";
 
         await user.ban({ reason });
-
         message.reply(`🔨 ${user.user.tag} fue baneado`);
 
-        const embed = new EmbedBuilder()
-            .setTitle('🔨 BAN')
-            .setColor('Red')
-            .addFields(
-                { name: '👤 Usuario', value: user.user.tag },
-                { name: '👮 Admin', value: message.author.tag },
-                { name: '📝 Razón', value: reason }
-            )
-            .setTimestamp();
+        const embed = createLogEmbed({
+            title: "🔨 Usuario Baneado",
+            color: "#e74c3c",
+            user: user.user,
+            moderator: message.author,
+            reason,
+            message
+        });
 
         logChannel.send({ embeds: [embed] });
     }
@@ -163,18 +199,16 @@ client.on(Events.MessageCreate, async (message) => {
         const reason = args.slice(2).join(' ') || "Sin razón";
 
         await user.kick(reason);
-
         message.reply(`👢 ${user.user.tag} fue expulsado`);
 
-        const embed = new EmbedBuilder()
-            .setTitle('👢 KICK')
-            .setColor('DarkRed')
-            .addFields(
-                { name: '👤 Usuario', value: user.user.tag },
-                { name: '👮 Admin', value: message.author.tag },
-                { name: '📝 Razón', value: reason }
-            )
-            .setTimestamp();
+        const embed = createLogEmbed({
+            title: "👢 Usuario Expulsado",
+            color: "#c0392b",
+            user: user.user,
+            moderator: message.author,
+            reason,
+            message
+        });
 
         logChannel.send({ embeds: [embed] });
     }
@@ -191,20 +225,46 @@ client.on(Events.MessageCreate, async (message) => {
         if (!user) return message.reply('⚠️ Menciona a alguien');
 
         await user.timeout(10 * 60 * 1000);
-
         message.reply(`🔇 ${user.user.tag} silenciado`);
 
-        const embed = new EmbedBuilder()
-            .setTitle('🔇 MUTE')
-            .setColor('Grey')
-            .addFields(
-                { name: '👤 Usuario', value: user.user.tag },
-                { name: '👮 Admin', value: message.author.tag }
-            )
-            .setTimestamp();
+        const embed = createLogEmbed({
+            title: "🔇 Usuario Silenciado",
+            color: "#7f8c8d",
+            user: user.user,
+            moderator: message.author,
+            message
+        });
+
+        logChannel.send({ embeds: [embed] });
+    }
+
+    // =====================
+    // UNMUTE
+    // =====================
+    if (command === '!unmute') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+            return message.reply('❌ Sin permisos');
+        }
+
+        const user = message.mentions.members.first();
+        if (!user) return message.reply('⚠️ Menciona a alguien');
+
+        await user.timeout(null);
+        message.reply(`🔊 ${user.user.tag} desmuteado`);
+
+        const embed = createLogEmbed({
+            title: "🔊 Usuario Desmuteado",
+            color: "#2ecc71",
+            user: user.user,
+            moderator: message.author,
+            message
+        });
 
         logChannel.send({ embeds: [embed] });
     }
 });
 
+// =====================
+// LOGIN
+// =====================
 client.login(process.env.TOKEN);
