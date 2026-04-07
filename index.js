@@ -1,7 +1,22 @@
 require('dotenv').config();
 
-const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, Events } = require('discord.js');
+const express = require('express');
+const { Client, GatewayIntentBits, PermissionsBitField, Events, EmbedBuilder } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
+
+// =====================
+// EXPRESS (RAILWAY)
+// =====================
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send("🚀 Lunaris Core activo");
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 Web activa en puerto ${PORT}`);
+});
 
 // =====================
 // DATABASE
@@ -17,7 +32,7 @@ db.run(`CREATE TABLE IF NOT EXISTS warns (
 )`);
 
 // =====================
-// CLIENT DISCORD
+// DISCORD CLIENT
 // =====================
 const client = new Client({
     intents: [
@@ -27,21 +42,21 @@ const client = new Client({
     ]
 });
 
-// =====================
-// READY
-// =====================
 client.once(Events.ClientReady, () => {
     console.log(`🤖 ${client.user.tag} online`);
 });
 
 // =====================
-// COMMANDS
+// COMANDOS
 // =====================
 client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
 
     const args = message.content.split(' ');
     const command = args[0];
+
+    // 🔥 LOG CHANNEL FIX DEFINITIVO
+    const logChannel = await message.client.channels.fetch("1480726976984518839");
 
     // =====================
     // CLEAR
@@ -55,7 +70,20 @@ client.on(Events.MessageCreate, async (message) => {
         if (!amount) return message.reply('⚠️ Escribe un número');
 
         await message.channel.bulkDelete(amount, true);
+
         message.reply(`🧹 ${amount} mensajes eliminados`);
+
+        const embed = new EmbedBuilder()
+            .setTitle('🧹 CLEAR')
+            .setColor('Purple')
+            .addFields(
+                { name: '👮 Admin', value: message.author.tag },
+                { name: '📦 Cantidad', value: `${amount}` },
+                { name: '📍 Canal', value: message.channel.name }
+            )
+            .setTimestamp();
+
+        logChannel.send({ embeds: [embed] });
     }
 
     // =====================
@@ -77,53 +105,106 @@ client.on(Events.MessageCreate, async (message) => {
         );
 
         message.reply(`⚠️ ${user.tag} fue advertido`);
+
+        const embed = new EmbedBuilder()
+            .setTitle('⚠️ WARN')
+            .setColor('Orange')
+            .addFields(
+                { name: '👤 Usuario', value: user.tag },
+                { name: '👮 Admin', value: message.author.tag },
+                { name: '📝 Razón', value: reason }
+            )
+            .setTimestamp();
+
+        logChannel.send({ embeds: [embed] });
     }
 
     // =====================
-    // VER WARNS
+    // BAN
     // =====================
-    if (command === '!warns') {
-        const user = message.mentions.users.first();
+    if (command === '!ban') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+            return message.reply('❌ No tienes permisos');
+        }
+
+        const user = message.mentions.members.first();
         if (!user) return message.reply('⚠️ Menciona a alguien');
 
-        db.all(`SELECT * FROM warns WHERE userId = ?`, [user.id], (err, rows) => {
-            if (!rows || rows.length === 0) {
-                return message.reply('✅ Este usuario no tiene warns');
-            }
+        const reason = args.slice(2).join(' ') || "Sin razón";
 
-            let msg = `📋 Warns de ${user.tag}\n`;
+        await user.ban({ reason });
 
-            rows.forEach(w => {
-                msg += `• ${w.reason} (${w.date})\n`;
-            });
+        message.reply(`🔨 ${user.user.tag} fue baneado`);
 
-            message.channel.send(msg);
-        });
+        const embed = new EmbedBuilder()
+            .setTitle('🔨 BAN')
+            .setColor('Red')
+            .addFields(
+                { name: '👤 Usuario', value: user.user.tag },
+                { name: '👮 Admin', value: message.author.tag },
+                { name: '📝 Razón', value: reason }
+            )
+            .setTimestamp();
+
+        logChannel.send({ embeds: [embed] });
     }
 
     // =====================
-    // CLEAR WARNS
+    // KICK
     // =====================
-    if (command === '!clearwarns') {
+    if (command === '!kick') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
+            return message.reply('❌ No tienes permisos');
+        }
+
+        const user = message.mentions.members.first();
+        if (!user) return message.reply('⚠️ Menciona a alguien');
+
+        const reason = args.slice(2).join(' ') || "Sin razón";
+
+        await user.kick(reason);
+
+        message.reply(`👢 ${user.user.tag} fue expulsado`);
+
+        const embed = new EmbedBuilder()
+            .setTitle('👢 KICK')
+            .setColor('DarkRed')
+            .addFields(
+                { name: '👤 Usuario', value: user.user.tag },
+                { name: '👮 Admin', value: message.author.tag },
+                { name: '📝 Razón', value: reason }
+            )
+            .setTimestamp();
+
+        logChannel.send({ embeds: [embed] });
+    }
+
+    // =====================
+    // MUTE
+    // =====================
+    if (command === '!mute') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
             return message.reply('❌ Sin permisos');
         }
 
-        const user = message.mentions.users.first();
+        const user = message.mentions.members.first();
         if (!user) return message.reply('⚠️ Menciona a alguien');
 
-        db.run(`DELETE FROM warns WHERE userId = ?`, [user.id]);
+        await user.timeout(10 * 60 * 1000);
 
-        message.reply(`🧹 Warns de ${user.tag} eliminados`);
+        message.reply(`🔇 ${user.user.tag} silenciado`);
+
+        const embed = new EmbedBuilder()
+            .setTitle('🔇 MUTE')
+            .setColor('Grey')
+            .addFields(
+                { name: '👤 Usuario', value: user.user.tag },
+                { name: '👮 Admin', value: message.author.tag }
+            )
+            .setTimestamp();
+
+        logChannel.send({ embeds: [embed] });
     }
 });
 
-// =====================
-// LOGIN
-// =====================
 client.login(process.env.TOKEN);
-
-// =====================
-// DASHBOARD (AQUÍ CORRE EXPRESS)
-// =====================
-require('./dashboard');
