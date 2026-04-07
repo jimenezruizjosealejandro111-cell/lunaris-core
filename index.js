@@ -14,6 +14,13 @@ app.get('/', (req, res) => {
     res.send("🚀 Lunaris Core activo");
 });
 
+// dashboard logs
+app.get('/logs', (req, res) => {
+    db.all("SELECT * FROM purchases ORDER BY id DESC LIMIT 20", [], (err, rows) => {
+        res.json(rows);
+    });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌐 Web activa`);
 });
@@ -43,6 +50,15 @@ db.run(`CREATE TABLE IF NOT EXISTS warns (
     reason TEXT,
     date TEXT
 )`);
+
+// =====================
+// CONFIG LOGS
+// =====================
+const LOGS = {
+    messages: "1480726976984518839",
+    roles: "1480726976984518839",
+    general: "1480726976984518839"
+};
 
 // =====================
 // COOLDOWNS
@@ -94,38 +110,111 @@ client.once(Events.ClientReady, () => {
 client.on(Events.GuildMemberAdd, async (member) => {
     const roleId = "1480379455271600360";
     const welcomeChannelId = "1480384374611378176";
-    const logChannelId = "1480726976984518839";
+
+    const welcomeChannel = await member.guild.channels.fetch(welcomeChannelId);
+    const logChannel = await member.guild.channels.fetch(LOGS.general);
+
+    await member.roles.add(roleId);
+
+    // bienvenida
+    welcomeChannel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setTitle("🌙 Bienvenido a Lunaris")
+                .setDescription(`✨ Bienvenido ${member} a **${member.guild.name}**`)
+                .setColor("#9b59b6")
+                .setThumbnail(member.user.displayAvatarURL())
+                .setTimestamp()
+        ]
+    });
+
+    // log
+    logChannel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setTitle("📥 Nuevo miembro")
+                .setColor("#00ffcc")
+                .addFields(
+                    { name: "Usuario", value: member.user.tag },
+                    { name: "ID", value: member.user.id }
+                )
+                .setTimestamp()
+        ]
+    });
+});
+
+// =====================
+// LOG: MENSAJE ELIMINADO
+// =====================
+client.on(Events.MessageDelete, async (message) => {
+    if (!message.guild || message.author?.bot) return;
+
+    const logChannel = await message.guild.channels.fetch(LOGS.messages);
+
+    let executor = "Desconocido";
 
     try {
-        await member.roles.add(roleId);
+        const logs = await message.guild.fetchAuditLogs({ limit: 1, type: 72 });
+        const entry = logs.entries.first();
+        if (entry) executor = entry.executor.tag;
+    } catch {}
 
-        const welcomeChannel = await member.guild.channels.fetch(welcomeChannelId);
-        const logChannel = await member.guild.channels.fetch(logChannelId);
+    logChannel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setTitle("🗑️ Mensaje eliminado")
+                .setColor("#e74c3c")
+                .addFields(
+                    { name: "Autor", value: message.author.tag },
+                    { name: "Eliminado por", value: executor },
+                    { name: "Canal", value: `${message.channel}` },
+                    { name: "Contenido", value: message.content || "Sin texto" }
+                )
+                .setTimestamp()
+        ]
+    });
+});
 
-        const welcomeEmbed = new EmbedBuilder()
-            .setTitle("🌙 Bienvenido a Lunaris")
-            .setDescription(`✨ Bienvenido ${member} a **${member.guild.name}**`)
-            .setColor("#9b59b6")
-            .setThumbnail(member.user.displayAvatarURL())
-            .setTimestamp();
+// =====================
+// LOG: MENSAJE EDITADO
+// =====================
+client.on(Events.MessageUpdate, async (oldMsg, newMsg) => {
+    if (!oldMsg.guild || oldMsg.author?.bot) return;
+    if (oldMsg.content === newMsg.content) return;
 
-        welcomeChannel.send({ embeds: [welcomeEmbed] });
+    const logChannel = await oldMsg.guild.channels.fetch(LOGS.messages);
 
-        const logEmbed = new EmbedBuilder()
-            .setTitle("📥 Nuevo miembro")
-            .setColor("#00ffcc")
-            .setThumbnail(member.user.displayAvatarURL())
-            .addFields(
-                { name: "👤 Usuario", value: `${member.user.tag}` },
-                { name: "🆔 ID", value: `${member.user.id}` }
-            )
-            .setTimestamp();
+    logChannel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setTitle("✏️ Mensaje editado")
+                .setColor("#f1c40f")
+                .addFields(
+                    { name: "Usuario", value: oldMsg.author.tag },
+                    { name: "Antes", value: oldMsg.content || "Vacío" },
+                    { name: "Después", value: newMsg.content || "Vacío" }
+                )
+                .setTimestamp()
+        ]
+    });
+});
 
-        logChannel.send({ embeds: [logEmbed] });
+// =====================
+// LOG: ROLES
+// =====================
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+    const logChannel = await newMember.guild.channels.fetch(LOGS.roles);
 
-    } catch (err) {
-        console.log(err);
-    }
+    const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
+    const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id));
+
+    added.forEach(role => {
+        logChannel.send(`➕ ${newMember.user.tag} recibió ${role.name}`);
+    });
+
+    removed.forEach(role => {
+        logChannel.send(`➖ ${newMember.user.tag} perdió ${role.name}`);
+    });
 });
 
 // =====================
@@ -137,7 +226,7 @@ client.on(Events.MessageCreate, async (message) => {
     const args = message.content.split(' ');
     const command = args[0];
 
-    const logChannel = await message.client.channels.fetch("1480726976984518839");
+    const logChannel = await message.client.channels.fetch(LOGS.general);
 
     // BALANCE
     if (command === '!balance') {
@@ -154,7 +243,6 @@ client.on(Events.MessageCreate, async (message) => {
 
         if (cooldowns.work.has(userId)) {
             const expiration = cooldowns.work.get(userId) + cooldown;
-
             if (now < expiration) {
                 const timeLeft = ((expiration - now) / 1000 / 60).toFixed(1);
                 return message.reply(`⏳ Espera ${timeLeft} minutos`);
@@ -165,9 +253,7 @@ client.on(Events.MessageCreate, async (message) => {
 
         const amount = Math.floor(Math.random() * 100) + 50;
 
-        getUser(userId, () => {
-            updateBalance(userId, amount);
-        });
+        getUser(userId, () => updateBalance(userId, amount));
 
         message.reply(`💼 Ganaste ${amount}`);
     }
@@ -175,11 +261,7 @@ client.on(Events.MessageCreate, async (message) => {
     // DAILY
     if (command === '!daily') {
         const amount = 200;
-
-        getUser(message.author.id, () => {
-            updateBalance(message.author.id, amount);
-        });
-
+        getUser(message.author.id, () => updateBalance(message.author.id, amount));
         message.reply(`🎁 Daily: ${amount}`);
     }
 
@@ -193,9 +275,7 @@ client.on(Events.MessageCreate, async (message) => {
         const price = 5000;
 
         getUser(message.author.id, (data) => {
-            if (data.balance < price) {
-                return message.reply("❌ No tienes dinero");
-            }
+            if (data.balance < price) return message.reply("❌ No tienes dinero");
 
             updateBalance(message.author.id, -price);
 
