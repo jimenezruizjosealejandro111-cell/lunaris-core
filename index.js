@@ -23,6 +23,7 @@ app.listen(PORT, '0.0.0.0', () => {
 // =====================
 const db = new sqlite3.Database('./warns.db');
 
+// WARNS
 db.run(`CREATE TABLE IF NOT EXISTS warns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     userId TEXT,
@@ -30,6 +31,29 @@ db.run(`CREATE TABLE IF NOT EXISTS warns (
     reason TEXT,
     date TEXT
 )`);
+
+// ECONOMY
+db.run(`CREATE TABLE IF NOT EXISTS economy (
+    userId TEXT PRIMARY KEY,
+    balance INTEGER
+)`);
+
+// =====================
+// ECONOMY FUNCTIONS
+// =====================
+function getUser(userId, callback) {
+    db.get(`SELECT * FROM economy WHERE userId = ?`, [userId], (err, row) => {
+        if (!row) {
+            db.run(`INSERT INTO economy (userId, balance) VALUES (?, ?)`, [userId, 0]);
+            return callback({ userId, balance: 0 });
+        }
+        callback(row);
+    });
+}
+
+function updateBalance(userId, amount) {
+    db.run(`UPDATE economy SET balance = balance + ? WHERE userId = ?`, [amount, userId]);
+}
 
 // =====================
 // CLIENT
@@ -98,8 +122,56 @@ client.on(Events.MessageCreate, async (message) => {
     const logChannel = await message.client.channels.fetch("1480726976984518839");
 
     // =====================
-    // CLEAR
+    // ECONOMY
     // =====================
+    if (command === '!balance') {
+        getUser(message.author.id, (data) => {
+            message.reply(`💰 Tienes: ${data.balance} monedas`);
+        });
+    }
+
+    if (command === '!work') {
+        const amount = Math.floor(Math.random() * 100) + 50;
+
+        getUser(message.author.id, () => {
+            updateBalance(message.author.id, amount);
+        });
+
+        message.reply(`💼 Ganaste ${amount} monedas`);
+    }
+
+    if (command === '!daily') {
+        const amount = 200;
+
+        getUser(message.author.id, () => {
+            updateBalance(message.author.id, amount);
+        });
+
+        message.reply(`🎁 Daily recibido: ${amount}`);
+    }
+
+    if (command === '!give') {
+        const user = message.mentions.users.first();
+        const amount = parseInt(args[2]);
+
+        if (!user || !amount) return message.reply("Uso: !give @user cantidad");
+
+        getUser(message.author.id, (data) => {
+            if (data.balance < amount) {
+                return message.reply("❌ No tienes suficiente dinero");
+            }
+
+            updateBalance(message.author.id, -amount);
+            updateBalance(user.id, amount);
+
+            message.reply(`💸 Transferiste ${amount} a ${user.tag}`);
+        });
+    }
+
+    // =====================
+    // MODERACIÓN
+    // =====================
+
     if (command === '!clear') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
             return message.reply('❌ No tienes permisos');
@@ -109,7 +181,6 @@ client.on(Events.MessageCreate, async (message) => {
         if (!amount) return message.reply('⚠️ Escribe un número');
 
         await message.channel.bulkDelete(amount, true);
-        message.reply(`🧹 ${amount} mensajes eliminados`);
 
         const embed = createLogEmbed({
             title: "🧹 Limpieza de Mensajes",
@@ -125,25 +196,14 @@ client.on(Events.MessageCreate, async (message) => {
         logChannel.send({ embeds: [embed] });
     }
 
-    // =====================
-    // WARN
-    // =====================
     if (command === '!warn') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-            return message.reply('❌ Sin permisos');
-        }
-
         const user = message.mentions.users.first();
         const reason = args.slice(2).join(' ') || "Sin razón";
-
-        if (!user) return message.reply('⚠️ Menciona a alguien');
 
         db.run(
             `INSERT INTO warns (userId, userTag, reason, date) VALUES (?, ?, ?, ?)`,
             [user.id, user.tag, reason, new Date().toLocaleString()]
         );
-
-        message.reply(`⚠️ ${user.tag} fue advertido`);
 
         const embed = createLogEmbed({
             title: "⚠️ Advertencia",
@@ -157,21 +217,11 @@ client.on(Events.MessageCreate, async (message) => {
         logChannel.send({ embeds: [embed] });
     }
 
-    // =====================
-    // BAN
-    // =====================
     if (command === '!ban') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
-            return message.reply('❌ No tienes permisos');
-        }
-
         const user = message.mentions.members.first();
-        if (!user) return message.reply('⚠️ Menciona a alguien');
-
         const reason = args.slice(2).join(' ') || "Sin razón";
 
         await user.ban({ reason });
-        message.reply(`🔨 ${user.user.tag} fue baneado`);
 
         const embed = createLogEmbed({
             title: "🔨 Usuario Baneado",
@@ -185,21 +235,11 @@ client.on(Events.MessageCreate, async (message) => {
         logChannel.send({ embeds: [embed] });
     }
 
-    // =====================
-    // KICK
-    // =====================
     if (command === '!kick') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
-            return message.reply('❌ No tienes permisos');
-        }
-
         const user = message.mentions.members.first();
-        if (!user) return message.reply('⚠️ Menciona a alguien');
-
         const reason = args.slice(2).join(' ') || "Sin razón";
 
         await user.kick(reason);
-        message.reply(`👢 ${user.user.tag} fue expulsado`);
 
         const embed = createLogEmbed({
             title: "👢 Usuario Expulsado",
@@ -213,19 +253,10 @@ client.on(Events.MessageCreate, async (message) => {
         logChannel.send({ embeds: [embed] });
     }
 
-    // =====================
-    // MUTE
-    // =====================
     if (command === '!mute') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-            return message.reply('❌ Sin permisos');
-        }
-
         const user = message.mentions.members.first();
-        if (!user) return message.reply('⚠️ Menciona a alguien');
 
         await user.timeout(10 * 60 * 1000);
-        message.reply(`🔇 ${user.user.tag} silenciado`);
 
         const embed = createLogEmbed({
             title: "🔇 Usuario Silenciado",
@@ -238,19 +269,10 @@ client.on(Events.MessageCreate, async (message) => {
         logChannel.send({ embeds: [embed] });
     }
 
-    // =====================
-    // UNMUTE
-    // =====================
     if (command === '!unmute') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-            return message.reply('❌ Sin permisos');
-        }
-
         const user = message.mentions.members.first();
-        if (!user) return message.reply('⚠️ Menciona a alguien');
 
         await user.timeout(null);
-        message.reply(`🔊 ${user.user.tag} desmuteado`);
 
         const embed = createLogEmbed({
             title: "🔊 Usuario Desmuteado",
