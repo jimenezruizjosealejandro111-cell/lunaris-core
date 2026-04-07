@@ -1,7 +1,24 @@
 require('dotenv').config();
 
+const express = require('express');
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, Events } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
+
+// =====================
+// EXPRESS (IMPORTANTE PARA RAILWAY)
+// =====================
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Ruta base (esto evita el 502)
+app.get('/', (req, res) => {
+    res.send("🚀 Lunaris Core activo");
+});
+
+// Iniciar servidor web
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 Web corriendo en puerto ${PORT}`);
+});
 
 // =====================
 // DATABASE
@@ -17,7 +34,7 @@ db.run(`CREATE TABLE IF NOT EXISTS warns (
 )`);
 
 // =====================
-// CLIENT
+// CLIENT DISCORD
 // =====================
 const client = new Client({
     intents: [
@@ -28,14 +45,14 @@ const client = new Client({
 });
 
 // =====================
-// READY (ACTUALIZADO)
+// READY
 // =====================
 client.once(Events.ClientReady, () => {
-    console.log(`🚀 ${client.user.tag} online`);
+    console.log(`🤖 ${client.user.tag} online`);
 });
 
 // =====================
-// EVENTS
+// COMMANDS
 // =====================
 client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
@@ -43,9 +60,7 @@ client.on(Events.MessageCreate, async (message) => {
     const args = message.content.split(' ');
     const command = args[0];
 
-    // =====================
     // CLEAR
-    // =====================
     if (command === '!clear') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
             return message.reply('❌ No tienes permisos');
@@ -55,26 +70,10 @@ client.on(Events.MessageCreate, async (message) => {
         if (!amount) return message.reply('⚠️ Escribe un número');
 
         await message.channel.bulkDelete(amount, true);
-
-        const logChannel = message.guild.channels.cache.find(c => c.name === "logs");
-
-        if (logChannel) {
-            const embed = new EmbedBuilder()
-                .setTitle('🧹 Clear ejecutado')
-                .addFields(
-                    { name: 'Usuario', value: message.author.tag },
-                    { name: 'Cantidad', value: `${amount}` },
-                    { name: 'Canal', value: `${message.channel}` }
-                )
-                .setColor('Purple');
-
-            logChannel.send({ embeds: [embed] });
-        }
+        message.reply(`🧹 ${amount} mensajes eliminados`);
     }
 
-    // =====================
     // WARN
-    // =====================
     if (command === '!warn') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
             return message.reply('❌ Sin permisos');
@@ -91,53 +90,29 @@ client.on(Events.MessageCreate, async (message) => {
         );
 
         message.reply(`⚠️ ${user.tag} fue advertido`);
-
-        const logChannel = message.guild.channels.cache.find(c => c.name === "logs");
-
-        if (logChannel) {
-            const embed = new EmbedBuilder()
-                .setTitle('⚠️ Warn')
-                .addFields(
-                    { name: 'Usuario', value: user.tag },
-                    { name: 'Moderador', value: message.author.tag },
-                    { name: 'Razón', value: reason }
-                )
-                .setColor('Orange');
-
-            logChannel.send({ embeds: [embed] });
-        }
     }
 
-    // =====================
-    // WARNS
-    // =====================
+    // VER WARNS
     if (command === '!warns') {
         const user = message.mentions.users.first();
         if (!user) return message.reply('⚠️ Menciona a alguien');
 
         db.all(`SELECT * FROM warns WHERE userId = ?`, [user.id], (err, rows) => {
             if (!rows || rows.length === 0) {
-                return message.reply('✅ Este usuario no tiene warns');
+                return message.reply('✅ Sin warns');
             }
 
-            const embed = new EmbedBuilder()
-                .setTitle(`📋 Warns de ${user.tag}`)
-                .setColor('Blue');
+            let msg = `📋 Warns de ${user.tag}\n`;
 
             rows.forEach(w => {
-                embed.addFields({
-                    name: w.date,
-                    value: w.reason
-                });
+                msg += `• ${w.reason} (${w.date})\n`;
             });
 
-            message.channel.send({ embeds: [embed] });
+            message.channel.send(msg);
         });
     }
 
-    // =====================
     // CLEAR WARNS
-    // =====================
     if (command === '!clearwarns') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
             return message.reply('❌ Sin permisos');
@@ -148,7 +123,7 @@ client.on(Events.MessageCreate, async (message) => {
 
         db.run(`DELETE FROM warns WHERE userId = ?`, [user.id]);
 
-        message.reply(`🧹 Warns de ${user.tag} eliminados`);
+        message.reply(`🧹 Warns eliminados`);
     }
 });
 
@@ -156,3 +131,8 @@ client.on(Events.MessageCreate, async (message) => {
 // LOGIN
 // =====================
 client.login(process.env.TOKEN);
+
+// =====================
+// DASHBOARD
+// =====================
+require('./dashboard');
