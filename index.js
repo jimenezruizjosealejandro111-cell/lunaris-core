@@ -75,6 +75,7 @@ function updateBalance(userId, amount) {
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent
     ]
@@ -88,6 +89,46 @@ client.once(Events.ClientReady, () => {
 });
 
 // =====================
+// AUTO ROLE + WELCOME
+// =====================
+client.on(Events.GuildMemberAdd, async (member) => {
+    const roleId = "1480379455271600360";
+    const welcomeChannelId = "1480384374611378176";
+    const logChannelId = "1480726976984518839";
+
+    try {
+        await member.roles.add(roleId);
+
+        const welcomeChannel = await member.guild.channels.fetch(welcomeChannelId);
+        const logChannel = await member.guild.channels.fetch(logChannelId);
+
+        const welcomeEmbed = new EmbedBuilder()
+            .setTitle("🌙 Bienvenido a Lunaris")
+            .setDescription(`✨ Bienvenido ${member} a **${member.guild.name}**`)
+            .setColor("#9b59b6")
+            .setThumbnail(member.user.displayAvatarURL())
+            .setTimestamp();
+
+        welcomeChannel.send({ embeds: [welcomeEmbed] });
+
+        const logEmbed = new EmbedBuilder()
+            .setTitle("📥 Nuevo miembro")
+            .setColor("#00ffcc")
+            .setThumbnail(member.user.displayAvatarURL())
+            .addFields(
+                { name: "👤 Usuario", value: `${member.user.tag}` },
+                { name: "🆔 ID", value: `${member.user.id}` }
+            )
+            .setTimestamp();
+
+        logChannel.send({ embeds: [logEmbed] });
+
+    } catch (err) {
+        console.log(err);
+    }
+});
+
+// =====================
 // COMMANDS
 // =====================
 client.on(Events.MessageCreate, async (message) => {
@@ -98,22 +139,18 @@ client.on(Events.MessageCreate, async (message) => {
 
     const logChannel = await message.client.channels.fetch("1480726976984518839");
 
-    // =====================
     // BALANCE
-    // =====================
     if (command === '!balance') {
         getUser(message.author.id, (data) => {
-            message.reply(`💰 Tienes: ${data.balance} monedas`);
+            message.reply(`💰 ${data.balance} monedas`);
         });
     }
 
-    // =====================
-    // WORK (20 MIN)
-    // =====================
+    // WORK 20 MIN
     if (command === '!work') {
         const userId = message.author.id;
         const now = Date.now();
-        const cooldown = 20 * 60 * 1000; // 🔥 20 minutos
+        const cooldown = 20 * 60 * 1000;
 
         if (cooldowns.work.has(userId)) {
             const expiration = cooldowns.work.get(userId) + cooldown;
@@ -132,145 +169,78 @@ client.on(Events.MessageCreate, async (message) => {
             updateBalance(userId, amount);
         });
 
-        message.reply(`💼 Ganaste ${amount} monedas`);
+        message.reply(`💼 Ganaste ${amount}`);
     }
 
-    // =====================
     // DAILY
-    // =====================
     if (command === '!daily') {
-        const userId = message.author.id;
-        const now = Date.now();
-        const cooldown = 24 * 60 * 60 * 1000;
-
-        if (cooldowns.daily.has(userId)) {
-            const expiration = cooldowns.daily.get(userId) + cooldown;
-
-            if (now < expiration) {
-                const timeLeft = ((expiration - now) / 1000 / 60).toFixed(1);
-                return message.reply(`⏳ Vuelve en ${timeLeft} min`);
-            }
-        }
-
-        cooldowns.daily.set(userId, now);
-
         const amount = 200;
 
-        getUser(userId, () => {
-            updateBalance(userId, amount);
+        getUser(message.author.id, () => {
+            updateBalance(message.author.id, amount);
         });
 
         message.reply(`🎁 Daily: ${amount}`);
     }
 
-    // =====================
-    // GIVE
-    // =====================
-    if (command === '!give') {
-        const user = message.mentions.users.first();
-        const amount = parseInt(args[2]);
-
-        if (!user || !amount) return message.reply("Uso: !give @user cantidad");
-
-        getUser(message.author.id, (data) => {
-            if (data.balance < amount) {
-                return message.reply("❌ No tienes suficiente dinero");
-            }
-
-            updateBalance(message.author.id, -amount);
-            updateBalance(user.id, amount);
-
-            message.reply(`💸 Transferiste ${amount} a ${user.tag}`);
-        });
-    }
-
-    // =====================
     // SHOP
-    // =====================
     if (command === '!shop') {
-        message.reply("🛒 VRChat Plus cuesta 5000 monedas");
+        message.reply("🛒 VRChat Plus — 5000 monedas");
     }
 
+    // BUY
     if (command === '!buy') {
         const price = 5000;
 
         getUser(message.author.id, (data) => {
             if (data.balance < price) {
-                return message.reply("❌ No tienes suficientes monedas");
+                return message.reply("❌ No tienes dinero");
             }
 
             updateBalance(message.author.id, -price);
 
             message.reply("🛒 Compraste VRChat Plus");
+
+            logChannel.send(`🛒 ${message.author.tag} compró VRChat Plus`);
         });
     }
 
-    // =====================
-    // WARN
-    // =====================
+    // WARN AUTO
     if (command === '!warn') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-            return message.reply("❌ Sin permisos");
-        }
-
         const member = message.mentions.members.first();
-        const user = member?.user;
-        const reason = args.slice(2).join(' ') || "Sin razón";
-
-        if (!member) return message.reply("⚠️ Menciona a alguien");
+        if (!member) return message.reply("⚠️ menciona a alguien");
 
         db.run(
             `INSERT INTO warns (userId, userTag, reason, date) VALUES (?, ?, ?, ?)`,
-            [user.id, user.tag, reason, new Date().toLocaleString()]
+            [member.id, member.user.tag, "Warn", new Date().toLocaleString()]
         );
 
-        db.all(`SELECT * FROM warns WHERE userId = ?`, [user.id], async (err, rows) => {
-            const totalWarns = rows.length;
+        db.all(`SELECT * FROM warns WHERE userId = ?`, [member.id], async (err, rows) => {
+            const total = rows.length;
 
-            message.reply(`⚠️ ${user.tag} tiene ${totalWarns} warns`);
+            message.reply(`⚠️ ${member.user.tag} tiene ${total} warns`);
 
-            if (totalWarns === 3) {
-                await member.timeout(10 * 60 * 1000);
-                message.channel.send(`🔇 Mute automático`);
+            if (total === 3) {
+                await member.timeout(600000);
+                message.channel.send("🔇 Mute automático");
             }
 
-            if (totalWarns >= 10) {
-                await member.ban({ reason: "Exceso de warns" });
-                db.run(`DELETE FROM warns WHERE userId = ?`, [user.id]);
-                message.channel.send(`🔨 Ban automático`);
+            if (total >= 10) {
+                await member.ban();
+                db.run(`DELETE FROM warns WHERE userId = ?`, [member.id]);
+                message.channel.send("🔨 Ban automático");
             }
         });
     }
 
-    // =====================
-    // WARNS
-    // =====================
-    if (command === '!warns') {
-        const user = message.mentions.users.first();
-        if (!user) return message.reply("⚠️ Menciona a alguien");
-
-        db.all(`SELECT * FROM warns WHERE userId = ?`, [user.id], (err, rows) => {
-            if (!rows.length) return message.reply("✅ Sin warns");
-
-            let msg = `📋 Warns:\n`;
-            rows.forEach(w => {
-                msg += `• ${w.reason}\n`;
-            });
-
-            message.reply(msg);
-        });
-    }
-
-    // =====================
     // CLEAR
-    // =====================
     if (command === '!clear') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return;
 
         const amount = parseInt(args[1]);
         await message.channel.bulkDelete(amount, true);
 
-        logChannel.send(`🧹 ${amount} mensajes borrados por ${message.author.tag}`);
+        logChannel.send(`🧹 ${amount} mensajes borrados`);
     }
 });
 
