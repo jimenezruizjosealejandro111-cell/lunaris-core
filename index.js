@@ -38,6 +38,15 @@ db.run(`CREATE TABLE IF NOT EXISTS purchases (
     date TEXT
 )`);
 
+// WARNS
+db.run(`CREATE TABLE IF NOT EXISTS warns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId TEXT,
+    userTag TEXT,
+    reason TEXT,
+    date TEXT
+)`);
+
 // =====================
 // COOLDOWNS
 // =====================
@@ -113,7 +122,7 @@ client.on(Events.MessageCreate, async (message) => {
     const logChannel = await message.client.channels.fetch("1480726976984518839");
 
     // =====================
-    // BALANCE
+    // ECONOMY
     // =====================
     if (command === '!balance') {
         getUser(message.author.id, (data) => {
@@ -121,9 +130,6 @@ client.on(Events.MessageCreate, async (message) => {
         });
     }
 
-    // =====================
-    // WORK (COOLDOWN)
-    // =====================
     if (command === '!work') {
         const userId = message.author.id;
         const now = Date.now();
@@ -131,7 +137,6 @@ client.on(Events.MessageCreate, async (message) => {
 
         if (cooldowns.work.has(userId)) {
             const expiration = cooldowns.work.get(userId) + cooldown;
-
             if (now < expiration) {
                 const timeLeft = ((expiration - now) / 1000).toFixed(0);
                 return message.reply(`⏳ Espera ${timeLeft}s`);
@@ -149,9 +154,6 @@ client.on(Events.MessageCreate, async (message) => {
         message.reply(`💼 Ganaste ${amount} monedas`);
     }
 
-    // =====================
-    // DAILY (COOLDOWN)
-    // =====================
     if (command === '!daily') {
         const userId = message.author.id;
         const now = Date.now();
@@ -159,7 +161,6 @@ client.on(Events.MessageCreate, async (message) => {
 
         if (cooldowns.daily.has(userId)) {
             const expiration = cooldowns.daily.get(userId) + cooldown;
-
             if (now < expiration) {
                 const timeLeft = ((expiration - now) / 1000 / 60).toFixed(1);
                 return message.reply(`⏳ Vuelve en ${timeLeft} min`);
@@ -177,6 +178,24 @@ client.on(Events.MessageCreate, async (message) => {
         message.reply(`🎁 Daily: ${amount}`);
     }
 
+    if (command === '!give') {
+        const user = message.mentions.users.first();
+        const amount = parseInt(args[2]);
+
+        if (!user || !amount) return message.reply("Uso: !give @user cantidad");
+
+        getUser(message.author.id, (data) => {
+            if (data.balance < amount) {
+                return message.reply("❌ No tienes suficiente dinero");
+            }
+
+            updateBalance(message.author.id, -amount);
+            updateBalance(user.id, amount);
+
+            message.reply(`💸 Transferiste ${amount} a ${user.tag}`);
+        });
+    }
+
     // =====================
     // SHOP
     // =====================
@@ -184,18 +203,13 @@ client.on(Events.MessageCreate, async (message) => {
         const embed = createEmbed(
             "🛒 Tienda Lunaris",
             "#9b59b6",
-            [
-                { name: "🌟 VRChat Plus (1 mes)", value: "💰 5000 monedas" }
-            ],
+            [{ name: "🌟 VRChat Plus (1 mes)", value: "💰 5000 monedas" }],
             message
         );
 
         message.reply({ embeds: [embed] });
     }
 
-    // =====================
-    // BUY
-    // =====================
     if (command === '!buy') {
         const price = 5000;
 
@@ -226,6 +240,63 @@ client.on(Events.MessageCreate, async (message) => {
             );
 
             logChannel.send({ embeds: [embed] });
+        });
+    }
+
+    // =====================
+    // WARN SISTEMA AUTOMÁTICO
+    // =====================
+    if (command === '!warn') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+            return message.reply("❌ Sin permisos");
+        }
+
+        const member = message.mentions.members.first();
+        const user = member?.user;
+        const reason = args.slice(2).join(' ') || "Sin razón";
+
+        if (!member) return message.reply("⚠️ Menciona a alguien");
+
+        db.run(
+            `INSERT INTO warns (userId, userTag, reason, date) VALUES (?, ?, ?, ?)`,
+            [user.id, user.tag, reason, new Date().toLocaleString()]
+        );
+
+        db.all(`SELECT * FROM warns WHERE userId = ?`, [user.id], async (err, rows) => {
+            const totalWarns = rows.length;
+
+            message.reply(`⚠️ ${user.tag} ahora tiene ${totalWarns} warns`);
+
+            if (totalWarns === 3) {
+                await member.timeout(10 * 60 * 1000);
+                message.channel.send(`🔇 ${user.tag} fue silenciado por 3 warns`);
+            }
+
+            if (totalWarns >= 10) {
+                await member.ban({ reason: "Exceso de warns" });
+                db.run(`DELETE FROM warns WHERE userId = ?`, [user.id]);
+                message.channel.send(`🔨 ${user.tag} fue baneado por 10 warns`);
+            }
+        });
+    }
+
+    // =====================
+    // VER WARNS
+    // =====================
+    if (command === '!warns') {
+        const user = message.mentions.users.first();
+        if (!user) return message.reply("⚠️ Menciona a alguien");
+
+        db.all(`SELECT * FROM warns WHERE userId = ?`, [user.id], (err, rows) => {
+            if (!rows.length) return message.reply("✅ Sin warns");
+
+            let msg = `📋 Warns de ${user.tag}\n`;
+
+            rows.forEach(w => {
+                msg += `• ${w.reason} (${w.date})\n`;
+            });
+
+            message.reply(msg);
         });
     }
 
