@@ -5,61 +5,23 @@ const { Client, GatewayIntentBits, Events, EmbedBuilder } = require('discord.js'
 const sqlite3 = require('sqlite3').verbose();
 
 // =====================
-// EXPRESS (FIX RAILWAY)
+// EXPRESS (WEB)
 // =====================
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// 🔥 RUTA ROOT SIMPLE (CLAVE PARA 502)
+// 🔥 RUTA PRINCIPAL (para evitar 502)
 app.get('/', (req, res) => {
-    res.send("🌙 LUNARIS CORE ONLINE ✅");
+    res.send("🌙 Lunaris Core ONLINE ✅");
 });
 
-// 🔥 PING TEST
+// 🔥 TEST
 app.get('/ping', (req, res) => {
     res.send("pong");
 });
 
-// 🔥 DASHBOARD (OPCIONAL YA FUNCIONAL)
-app.get('/dashboard', (req, res) => {
-    res.send(`
-    <html>
-    <head>
-        <title>Lunaris Dashboard</title>
-        <style>
-            body {
-                background: #0f0f1a;
-                color: white;
-                font-family: Arial;
-                text-align: center;
-                padding: 50px;
-            }
-            .card {
-                background: #1e1e2f;
-                padding: 20px;
-                border-radius: 10px;
-                margin: 10px;
-                display: inline-block;
-            }
-        </style>
-    </head>
-    <body>
-        <h1>🌙 Lunaris Dashboard</h1>
-        <div class="card">Bot Online ✅</div>
-        <div class="card"><a href="/logs">Ver logs</a></div>
-    </body>
-    </html>
-    `);
-});
+// 🔥 IMPORTANTE (PUERTO DINÁMICO)
+const PORT = process.env.PORT;
 
-// 📊 LOGS WEB
-app.get('/logs', (req, res) => {
-    db.all("SELECT * FROM purchases ORDER BY id DESC LIMIT 20", [], (err, rows) => {
-        res.json(rows || []);
-    });
-});
-
-// 🔥 IMPORTANTE (NO FALLA EN RAILWAY)
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌐 Web activa en puerto ${PORT}`);
 });
@@ -79,14 +41,6 @@ db.run(`CREATE TABLE IF NOT EXISTS purchases (
     userId TEXT,
     item TEXT,
     price INTEGER,
-    date TEXT
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS warns (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    userId TEXT,
-    userTag TEXT,
-    reason TEXT,
     date TEXT
 )`);
 
@@ -149,8 +103,8 @@ client.on(Events.GuildMemberAdd, async (member) => {
     welcomeChannel.send({
         embeds: [
             new EmbedBuilder()
-                .setTitle("🌙 Bienvenido")
-                .setDescription(`✨ ${member} se unió`)
+                .setTitle("🌙 Bienvenido a Lunaris")
+                .setDescription(`✨ ${member} se unió al servidor`)
                 .setColor("#9b59b6")
                 .setThumbnail(member.user.displayAvatarURL())
         ]
@@ -207,15 +161,14 @@ client.on(Events.MessageUpdate, async (oldMsg, newMsg) => {
 client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
 
-    const args = message.content.split(' ');
-    const command = args[0];
+    const command = message.content.split(' ')[0];
 
     const logChannel = await message.client.channels.fetch(LOG_CHANNEL);
 
     // 💰 BALANCE
     if (command === '!balance') {
         getUser(message.author.id, (data) => {
-            message.reply(`💰 Tienes ${data.balance}`);
+            message.reply(`💰 Tienes ${data.balance} monedas`);
         });
     }
 
@@ -240,7 +193,7 @@ client.on(Events.MessageCreate, async (message) => {
 
         getUser(userId, () => updateBalance(userId, amount));
 
-        message.reply(`💼 Ganaste ${amount}`);
+        message.reply(`💼 Ganaste ${amount} monedas`);
     }
 
     // 🛒 SHOP
@@ -257,7 +210,8 @@ client.on(Events.MessageCreate, async (message) => {
 
             updateBalance(message.author.id, -price);
 
-            db.run(`INSERT INTO purchases (userId, item, price, date) VALUES (?, ?, ?, ?)`,
+            db.run(
+                `INSERT INTO purchases (userId, item, price, date) VALUES (?, ?, ?, ?)`,
                 [message.author.id, "VRChat Plus", price, new Date().toISOString()]
             );
 
