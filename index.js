@@ -5,12 +5,16 @@ const { Client, GatewayIntentBits, PermissionsBitField, Events, EmbedBuilder } =
 const sqlite3 = require('sqlite3').verbose();
 
 // =====================
-// EXPRESS
+// EXPRESS (WEB)
 // =====================
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// 🌐 DASHBOARD WEB
+// 🌐 HEALTH CHECK (IMPORTANTE PARA RAILWAY)
+app.get('/health', (req, res) => {
+    res.send("OK");
+});
+
+// 🌐 DASHBOARD
 app.get('/', (req, res) => {
     res.send(`
     <html>
@@ -38,7 +42,6 @@ app.get('/', (req, res) => {
         </style>
     </head>
     <body>
-
         <h1>🌙 Lunaris Core Dashboard</h1>
 
         <div class="card">
@@ -47,8 +50,8 @@ app.get('/', (req, res) => {
         </div>
 
         <div class="card">
-            <h2>💰 Economía</h2>
-            <p><a href="/logs">Ver compras</a></p>
+            <h2>📊 Logs</h2>
+            <p><a href="/logs">Ver datos</a></p>
         </div>
 
     </body>
@@ -56,15 +59,16 @@ app.get('/', (req, res) => {
     `);
 });
 
-// 📊 LOGS API
+// 📊 LOGS WEB
 app.get('/logs', (req, res) => {
     db.all("SELECT * FROM purchases ORDER BY id DESC LIMIT 20", [], (err, rows) => {
-        res.json(rows);
+        res.json(rows || []);
     });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🌐 Web activa`);
+// 🚀 IMPORTANTE (FIX 502)
+app.listen(process.env.PORT || 3000, () => {
+    console.log("🌐 Web activa (Railway OK)");
 });
 
 // =====================
@@ -94,20 +98,17 @@ db.run(`CREATE TABLE IF NOT EXISTS warns (
 )`);
 
 // =====================
-// CONFIG LOGS
+// CONFIG
 // =====================
-const LOGS = {
-    messages: "1480726976984518839",
-    roles: "1480726976984518839",
-    general: "1480726976984518839"
-};
+const LOG_CHANNEL = "1480726976984518839";
+const WELCOME_CHANNEL = "1480384374611378176";
+const AUTO_ROLE = "1480379455271600360";
 
 // =====================
 // COOLDOWNS
 // =====================
 const cooldowns = {
-    work: new Map(),
-    daily: new Map()
+    work: new Map()
 };
 
 // =====================
@@ -139,65 +140,39 @@ const client = new Client({
     ]
 });
 
-// =====================
-// READY
-// =====================
 client.once(Events.ClientReady, () => {
     console.log(`🤖 ${client.user.tag} online`);
 });
 
 // =====================
-// AUTO ROLE + WELCOME
+// AUTO ROLE + BIENVENIDA
 // =====================
 client.on(Events.GuildMemberAdd, async (member) => {
-    const roleId = "1480379455271600360";
-    const welcomeChannelId = "1480384374611378176";
+    const welcomeChannel = await member.guild.channels.fetch(WELCOME_CHANNEL);
+    const logChannel = await member.guild.channels.fetch(LOG_CHANNEL);
 
-    const welcomeChannel = await member.guild.channels.fetch(welcomeChannelId);
-    const logChannel = await member.guild.channels.fetch(LOGS.general);
-
-    await member.roles.add(roleId);
+    await member.roles.add(AUTO_ROLE);
 
     welcomeChannel.send({
         embeds: [
             new EmbedBuilder()
-                .setTitle("🌙 Bienvenido a Lunaris")
-                .setDescription(`✨ Bienvenido ${member} a **${member.guild.name}**`)
+                .setTitle("🌙 Bienvenido")
+                .setDescription(`✨ ${member} se unió`)
                 .setColor("#9b59b6")
                 .setThumbnail(member.user.displayAvatarURL())
-                .setTimestamp()
         ]
     });
 
-    logChannel.send({
-        embeds: [
-            new EmbedBuilder()
-                .setTitle("📥 Nuevo miembro")
-                .setColor("#00ffcc")
-                .addFields(
-                    { name: "Usuario", value: member.user.tag },
-                    { name: "ID", value: member.user.id }
-                )
-                .setTimestamp()
-        ]
-    });
+    logChannel.send(`📥 ${member.user.tag} entró al servidor`);
 });
 
 // =====================
-// LOG: DELETE
+// LOG MENSAJES
 // =====================
 client.on(Events.MessageDelete, async (message) => {
     if (!message.guild || message.author?.bot) return;
 
-    const logChannel = await message.guild.channels.fetch(LOGS.messages);
-
-    let executor = "Desconocido";
-
-    try {
-        const logs = await message.guild.fetchAuditLogs({ limit: 1, type: 72 });
-        const entry = logs.entries.first();
-        if (entry) executor = entry.executor.tag;
-    } catch {}
+    const logChannel = await message.guild.channels.fetch(LOG_CHANNEL);
 
     logChannel.send({
         embeds: [
@@ -205,24 +180,19 @@ client.on(Events.MessageDelete, async (message) => {
                 .setTitle("🗑️ Mensaje eliminado")
                 .setColor("#e74c3c")
                 .addFields(
-                    { name: "Autor", value: message.author.tag },
-                    { name: "Eliminado por", value: executor },
+                    { name: "Usuario", value: message.author.tag },
                     { name: "Canal", value: `${message.channel}` },
-                    { name: "Contenido", value: message.content || "Sin texto" }
+                    { name: "Contenido", value: message.content || "Vacío" }
                 )
-                .setTimestamp()
         ]
     });
 });
 
-// =====================
-// LOG: EDIT
-// =====================
 client.on(Events.MessageUpdate, async (oldMsg, newMsg) => {
     if (!oldMsg.guild || oldMsg.author?.bot) return;
     if (oldMsg.content === newMsg.content) return;
 
-    const logChannel = await oldMsg.guild.channels.fetch(LOGS.messages);
+    const logChannel = await oldMsg.guild.channels.fetch(LOG_CHANNEL);
 
     logChannel.send({
         embeds: [
@@ -234,13 +204,12 @@ client.on(Events.MessageUpdate, async (oldMsg, newMsg) => {
                     { name: "Antes", value: oldMsg.content || "Vacío" },
                     { name: "Después", value: newMsg.content || "Vacío" }
                 )
-                .setTimestamp()
         ]
     });
 });
 
 // =====================
-// COMMANDS
+// COMANDOS
 // =====================
 client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
@@ -248,14 +217,16 @@ client.on(Events.MessageCreate, async (message) => {
     const args = message.content.split(' ');
     const command = args[0];
 
-    const logChannel = await message.client.channels.fetch(LOGS.general);
+    const logChannel = await message.client.channels.fetch(LOG_CHANNEL);
 
+    // 💰 BALANCE
     if (command === '!balance') {
         getUser(message.author.id, (data) => {
-            message.reply(`💰 ${data.balance} monedas`);
+            message.reply(`💰 Tienes ${data.balance}`);
         });
     }
 
+    // 💼 WORK (20 MIN)
     if (command === '!work') {
         const userId = message.author.id;
         const now = Date.now();
@@ -263,6 +234,7 @@ client.on(Events.MessageCreate, async (message) => {
 
         if (cooldowns.work.has(userId)) {
             const expiration = cooldowns.work.get(userId) + cooldown;
+
             if (now < expiration) {
                 const timeLeft = ((expiration - now) / 1000 / 60).toFixed(1);
                 return message.reply(`⏳ Espera ${timeLeft} minutos`);
@@ -278,25 +250,25 @@ client.on(Events.MessageCreate, async (message) => {
         message.reply(`💼 Ganaste ${amount}`);
     }
 
-    if (command === '!daily') {
-        const amount = 200;
-        getUser(message.author.id, () => updateBalance(message.author.id, amount));
-        message.reply(`🎁 Daily: ${amount}`);
-    }
-
+    // 🛒 SHOP
     if (command === '!shop') {
-        message.reply("🛒 VRChat Plus — 5000 monedas");
+        message.reply("🛒 VRChat Plus → 5000 monedas");
     }
 
+    // 💳 BUY
     if (command === '!buy') {
         const price = 5000;
 
         getUser(message.author.id, (data) => {
-            if (data.balance < price) return message.reply("❌ No tienes dinero");
+            if (data.balance < price) return message.reply("❌ No tienes suficiente dinero");
 
             updateBalance(message.author.id, -price);
 
-            message.reply("🛒 Compraste VRChat Plus");
+            db.run(`INSERT INTO purchases (userId, item, price, date) VALUES (?, ?, ?, ?)`,
+                [message.author.id, "VRChat Plus", price, new Date().toISOString()]
+            );
+
+            message.reply("✅ Compraste VRChat Plus");
 
             logChannel.send(`🛒 ${message.author.tag} compró VRChat Plus`);
         });
