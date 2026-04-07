@@ -1,21 +1,27 @@
 require('dotenv').config();
 
 const express = require('express');
-const { Client, GatewayIntentBits, PermissionsBitField, Events, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Events, EmbedBuilder } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
 
 // =====================
-// EXPRESS (WEB)
+// EXPRESS (FIX RAILWAY)
 // =====================
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-// 🌐 HEALTH CHECK (IMPORTANTE PARA RAILWAY)
-app.get('/health', (req, res) => {
-    res.send("OK");
+// 🔥 RUTA ROOT SIMPLE (CLAVE PARA 502)
+app.get('/', (req, res) => {
+    res.send("🌙 LUNARIS CORE ONLINE ✅");
 });
 
-// 🌐 DASHBOARD
-app.get('/', (req, res) => {
+// 🔥 PING TEST
+app.get('/ping', (req, res) => {
+    res.send("pong");
+});
+
+// 🔥 DASHBOARD (OPCIONAL YA FUNCIONAL)
+app.get('/dashboard', (req, res) => {
     res.send(`
     <html>
     <head>
@@ -35,25 +41,12 @@ app.get('/', (req, res) => {
                 margin: 10px;
                 display: inline-block;
             }
-            a {
-                color: #9b59b6;
-                text-decoration: none;
-            }
         </style>
     </head>
     <body>
-        <h1>🌙 Lunaris Core Dashboard</h1>
-
-        <div class="card">
-            <h2>🤖 Estado</h2>
-            <p>Online</p>
-        </div>
-
-        <div class="card">
-            <h2>📊 Logs</h2>
-            <p><a href="/logs">Ver datos</a></p>
-        </div>
-
+        <h1>🌙 Lunaris Dashboard</h1>
+        <div class="card">Bot Online ✅</div>
+        <div class="card"><a href="/logs">Ver logs</a></div>
     </body>
     </html>
     `);
@@ -66,9 +59,9 @@ app.get('/logs', (req, res) => {
     });
 });
 
-// 🚀 IMPORTANTE (FIX 502)
-app.listen(process.env.PORT || 3000, () => {
-    console.log("🌐 Web activa (Railway OK)");
+// 🔥 IMPORTANTE (NO FALLA EN RAILWAY)
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 Web activa en puerto ${PORT}`);
 });
 
 // =====================
@@ -112,7 +105,7 @@ const cooldowns = {
 };
 
 // =====================
-// FUNCTIONS
+// FUNCIONES
 // =====================
 function getUser(userId, callback) {
     db.get(`SELECT * FROM economy WHERE userId = ?`, [userId], (err, row) => {
@@ -129,7 +122,7 @@ function updateBalance(userId, amount) {
 }
 
 // =====================
-// CLIENT
+// DISCORD BOT
 // =====================
 const client = new Client({
     intents: [
