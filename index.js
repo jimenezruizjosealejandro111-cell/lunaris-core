@@ -1,9 +1,9 @@
 require('dotenv').config();
 
-console.log("🔥 LUNARIS CORE DIOS FINAL 🔥");
+console.log("🔥 LUNARIS CORE FINAL 🔥");
 
 const express = require('express');
-const { Client, GatewayIntentBits, Events, PermissionsBitField } = require('discord.js');
+const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
@@ -15,117 +15,85 @@ const db = new sqlite3.Database('./data.db');
 app.get('/', (req, res) => {
     res.send(`
     <h1>🌙 Lunaris Dashboard</h1>
-    <p>Bot ONLINE ✅</p>
-    <a href="/panel">Abrir Panel PRO</a>
+    <a href="/panel">Abrir Leaderboard</a>
     `);
 });
 
 // =====================
-// 📊 PANEL PRO + AUTO REFRESH
+// 🏆 LEADERBOARD PRO
 // =====================
 app.get('/panel', async (req, res) => {
 
-    db.all("SELECT * FROM economy ORDER BY balance DESC LIMIT 10", [], async (err, eco) => {
+    db.all("SELECT * FROM economy ORDER BY balance DESC", [], async (err, eco) => {
 
-        db.all("SELECT * FROM warns ORDER BY warns DESC LIMIT 10", [], async (err2, warns) => {
+        let html = "";
+        let pos = 1;
 
-            let ecoHTML = "";
+        for (const u of eco) {
 
-            for (const u of eco) {
-                try {
-                    const user = await client.users.fetch(u.userId);
+            let medal = pos === 1 ? "🥇" :
+                        pos === 2 ? "🥈" :
+                        pos === 3 ? "🥉" : `#${pos}`;
 
-                    ecoHTML += `
-                    <tr>
-                        <td><img src="${user.displayAvatarURL()}" width="40"></td>
-                        <td>${user.username}</td>
-                        <td>${u.balance}</td>
-                    </tr>`;
-                } catch {
-                    ecoHTML += `<tr><td>?</td><td>${u.userId}</td><td>${u.balance}</td></tr>`;
-                }
+            try {
+                const user = await client.users.fetch(u.userId);
+
+                html += `
+                <div class="card">
+                    <span>${medal}</span>
+                    <img src="${user.displayAvatarURL()}" class="avatar">
+                    <span>${user.username}</span>
+                    <span>${u.balance} 💰</span>
+                </div>`;
+            } catch {
+                html += `<div class="card">${medal} ${u.userId} ${u.balance}</div>`;
             }
 
-            let warnHTML = "";
+            pos++;
+        }
 
-            for (const u of warns) {
-                try {
-                    const user = await client.users.fetch(u.userId);
-
-                    warnHTML += `
-                    <tr>
-                        <td><img src="${user.displayAvatarURL()}" width="40"></td>
-                        <td>${user.username}</td>
-                        <td>${u.warns}</td>
-                    </tr>`;
-                } catch {
-                    warnHTML += `<tr><td>?</td><td>${u.userId}</td><td>${u.warns}</td></tr>`;
+        res.send(`
+        <html>
+        <head>
+            <meta http-equiv="refresh" content="5">
+            <style>
+                body { background:#0f0f1a; color:white; font-family:Arial; padding:20px; }
+                h1 { text-align:center; color:#9b59b6; }
+                .card {
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    background:#1a1a2e;
+                    padding:15px;
+                    margin:10px 0;
+                    border-radius:10px;
                 }
-            }
-
-            res.send(`
-            <html>
-            <head>
-                <title>Lunaris Panel</title>
-                <meta http-equiv="refresh" content="5">
-                <style>
-                    body { background:#0f0f1a; color:white; font-family:Arial; padding:20px; }
-                    h1 { color:#9b59b6; text-align:center; }
-                    table { width:100%; border-collapse:collapse; margin-top:20px; }
-                    th, td { padding:10px; border-bottom:1px solid #333; text-align:center; }
-                    tr:hover { background:#1e1e2f; }
-                    img { border-radius:50%; }
-                </style>
-            </head>
-
-            <body>
-
-                <h1>🌙 Lunaris Panel PRO</h1>
-
-                <h2>💰 Economía</h2>
-                <table>
-                    <tr><th>Avatar</th><th>Usuario</th><th>Monedas</th></tr>
-                    ${ecoHTML}
-                </table>
-
-                <h2>⚠️ Warns</h2>
-                <table>
-                    <tr><th>Avatar</th><th>Usuario</th><th>Warns</th></tr>
-                    ${warnHTML}
-                </table>
-
-            </body>
-            </html>
-            `);
-        });
+                .avatar { width:40px; border-radius:50%; }
+            </style>
+        </head>
+        <body>
+            <h1>🌙 Lunaris Leaderboard</h1>
+            ${html}
+        </body>
+        </html>
+        `);
     });
 });
 
-app.get('/ping', (req, res) => res.send("pong"));
-
 // =====================
-// 🚀 SERVER
+// SERVER
 // =====================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log("🌐 WEB ONLINE");
-});
+app.listen(PORT, '0.0.0.0');
 
 // =====================
-// 💾 DATABASE
+// DB
 // =====================
-db.run(`CREATE TABLE IF NOT EXISTS economy (
-    userId TEXT PRIMARY KEY,
-    balance INTEGER
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS warns (
-    userId TEXT PRIMARY KEY,
-    warns INTEGER
-)`);
+db.run(`CREATE TABLE IF NOT EXISTS economy (userId TEXT PRIMARY KEY, balance INTEGER)`);
+db.run(`CREATE TABLE IF NOT EXISTS warns (userId TEXT PRIMARY KEY, warns INTEGER)`);
 
 // =====================
-// 🤖 BOT
+// BOT
 // =====================
 const client = new Client({
     intents: [
@@ -138,19 +106,16 @@ const client = new Client({
 
 const cooldowns = new Map();
 
+const LOG_CHANNEL = "1480726976984518839";
+const WELCOME_CHANNEL = "1480384374611378176";
+const AUTO_ROLE = "1480379455271600360";
+
 client.once(Events.ClientReady, () => {
     console.log(`🤖 ${client.user.tag} ONLINE`);
 });
 
 // =====================
-// CONFIG
-// =====================
-const LOG_CHANNEL = "1480726976984518839";
-const WELCOME_CHANNEL = "1480384374611378176";
-const AUTO_ROLE = "1480379455271600360";
-
-// =====================
-// BIENVENIDA + AUTO REGISTRO
+// BIENVENIDA
 // =====================
 client.on(Events.GuildMemberAdd, async (member) => {
     const welcome = await member.guild.channels.fetch(WELCOME_CHANNEL);
@@ -166,11 +131,10 @@ client.on(Events.GuildMemberAdd, async (member) => {
 });
 
 // =====================
-// AUTO REGISTRO AL HABLAR
+// AUTO REGISTRO
 // =====================
 client.on(Events.MessageCreate, (message) => {
     if (message.author.bot) return;
-
     db.run(`INSERT OR IGNORE INTO economy VALUES (?,?)`, [message.author.id, 0]);
 });
 
@@ -200,12 +164,16 @@ client.on(Events.MessageCreate, async (message) => {
     const args = message.content.split(" ");
     const cmd = args[0];
 
+    const logChannel = await message.guild.channels.fetch(LOG_CHANNEL);
+
+    // BALANCE
     if (cmd === "!balance") {
         getUser(message.author.id, (data) => {
             message.reply(`💰 ${data.balance}`);
         });
     }
 
+    // WORK
     if (cmd === "!work") {
         const user = message.author.id;
         const now = Date.now();
@@ -213,10 +181,7 @@ client.on(Events.MessageCreate, async (message) => {
 
         if (cooldowns.has(user)) {
             const exp = cooldowns.get(user) + cd;
-            if (now < exp) {
-                const t = ((exp - now) / 60000).toFixed(1);
-                return message.reply(`⏳ Espera ${t} min`);
-            }
+            if (now < exp) return message.reply("⏳ espera");
         }
 
         cooldowns.set(user, now);
@@ -224,9 +189,36 @@ client.on(Events.MessageCreate, async (message) => {
         const money = Math.floor(Math.random() * 100) + 50;
         getUser(user, () => addMoney(user, money));
 
-        message.reply(`💼 Ganaste ${money}`);
+        message.reply(`💼 +${money}`);
+        logChannel.send(`💰 ${message.author.tag} ganó ${money}`);
     }
 
+    // GIVE
+    if (cmd === "!give") {
+        const user = message.mentions.users.first();
+        const amount = parseInt(args[2]);
+
+        if (!user) return message.reply("❌ menciona a alguien");
+        if (!amount || amount <= 0) return message.reply("❌ cantidad inválida");
+
+        getUser(message.author.id, (sender) => {
+
+            if (sender.balance < amount) {
+                return message.reply("❌ no tienes dinero");
+            }
+
+            db.run(`UPDATE economy SET balance = balance - ? WHERE userId=?`, [amount, message.author.id]);
+
+            getUser(user.id, () => {
+                db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`, [amount, user.id]);
+            });
+
+            message.reply(`💸 diste ${amount} a ${user.username}`);
+            logChannel.send(`💸 ${message.author.tag} dio ${amount} a ${user.tag}`);
+        });
+    }
+
+    // WARN
     if (cmd === "!warn") {
         const user = message.mentions.users.first();
         if (!user) return;
@@ -236,25 +228,18 @@ client.on(Events.MessageCreate, async (message) => {
 
             db.run(`INSERT OR REPLACE INTO warns VALUES (?,?)`, [user.id, warns]);
 
-            message.reply(`⚠️ ${warns} warns`);
+            message.reply(`⚠️ ${warns}`);
+            logChannel.send(`⚠️ ${user.tag} tiene ${warns} warns`);
 
             if (warns >= 10) {
                 const member = await message.guild.members.fetch(user.id);
                 await member.ban();
-                message.channel.send(`🚫 baneado`);
+                logChannel.send(`🚫 ${user.tag} fue baneado`);
             }
         });
     }
 
-    if (cmd === "!warns") {
-        const user = message.mentions.users.first() || message.author;
-
-        db.get(`SELECT * FROM warns WHERE userId=?`, [user.id], (err, row) => {
-            const warns = row ? row.warns : 0;
-            message.reply(`⚠️ ${warns}`);
-        });
-    }
-
+    // CLEAR
     if (cmd === "!clear") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return;
 
@@ -262,7 +247,20 @@ client.on(Events.MessageCreate, async (message) => {
         if (!amount) return;
 
         await message.channel.bulkDelete(amount);
-        message.reply(`🧹 ${amount}`);
+
+        const embed = new EmbedBuilder()
+            .setColor("#9b59b6")
+            .setTitle("🧹 Mensajes eliminados")
+            .addFields(
+                { name: "Moderador", value: message.author.tag },
+                { name: "Cantidad", value: `${amount}` },
+                { name: "Canal", value: `${message.channel}` }
+            )
+            .setTimestamp();
+
+        logChannel.send({ embeds: [embed] });
+
+        message.reply(`🧹 ${amount} eliminados`);
     }
 });
 
