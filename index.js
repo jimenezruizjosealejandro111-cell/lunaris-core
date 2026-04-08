@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-console.log("🔥 LUNARIS CORE PRO ACTIVO 🔥");
+console.log("🔥 LUNARIS CORE MODO DIOS 🔥");
 
 const express = require('express');
 const { Client, GatewayIntentBits, Events, PermissionsBitField } = require('discord.js');
@@ -16,36 +16,85 @@ app.get('/', (req, res) => {
     res.send(`
     <h1>🌙 Lunaris Dashboard</h1>
     <p>Bot ONLINE ✅</p>
-    <a href="/panel">Abrir Panel</a>
+    <a href="/panel">Abrir Panel PRO</a>
     `);
 });
 
 // =====================
-// 📊 PANEL REAL
+// 📊 PANEL PRO
 // =====================
-app.get('/panel', (req, res) => {
+app.get('/panel', async (req, res) => {
 
-    db.all("SELECT * FROM economy ORDER BY balance DESC LIMIT 10", [], (err, eco) => {
+    db.all("SELECT * FROM economy ORDER BY balance DESC LIMIT 10", [], async (err, eco) => {
 
-        db.all("SELECT * FROM warns ORDER BY warns DESC LIMIT 10", [], (err2, warns) => {
+        db.all("SELECT * FROM warns ORDER BY warns DESC LIMIT 10", [], async (err2, warns) => {
 
-            const ecoHTML = eco.map(u => `<tr><td>${u.userId}</td><td>${u.balance}</td></tr>`).join('');
-            const warnHTML = warns.map(u => `<tr><td>${u.userId}</td><td>${u.warns}</td></tr>`).join('');
+            let ecoHTML = "";
+
+            for (const u of eco) {
+                try {
+                    const user = await client.users.fetch(u.userId);
+
+                    ecoHTML += `
+                    <tr>
+                        <td><img src="${user.displayAvatarURL()}" width="40"></td>
+                        <td>${user.username}</td>
+                        <td>${u.balance}</td>
+                    </tr>`;
+                } catch {
+                    ecoHTML += `<tr><td>?</td><td>${u.userId}</td><td>${u.balance}</td></tr>`;
+                }
+            }
+
+            let warnHTML = "";
+
+            for (const u of warns) {
+                try {
+                    const user = await client.users.fetch(u.userId);
+
+                    warnHTML += `
+                    <tr>
+                        <td><img src="${user.displayAvatarURL()}" width="40"></td>
+                        <td>${user.username}</td>
+                        <td>${u.warns}</td>
+                    </tr>`;
+                } catch {
+                    warnHTML += `<tr><td>?</td><td>${u.userId}</td><td>${u.warns}</td></tr>`;
+                }
+            }
 
             res.send(`
-            <h1>🌙 Panel Lunaris</h1>
+            <html>
+            <head>
+                <title>Lunaris Panel</title>
+                <style>
+                    body { background:#0f0f1a; color:white; font-family:Arial; padding:20px; }
+                    h1 { color:#9b59b6; text-align:center; }
+                    table { width:100%; border-collapse:collapse; margin-top:20px; }
+                    th, td { padding:10px; border-bottom:1px solid #333; text-align:center; }
+                    tr:hover { background:#1e1e2f; }
+                    img { border-radius:50%; }
+                </style>
+            </head>
 
-            <h2>💰 Economía</h2>
-            <table border="1">
-                <tr><th>ID</th><th>Monedas</th></tr>
-                ${ecoHTML}
-            </table>
+            <body>
 
-            <h2>⚠️ Warns</h2>
-            <table border="1">
-                <tr><th>ID</th><th>Warns</th></tr>
-                ${warnHTML}
-            </table>
+                <h1>🌙 Lunaris Panel PRO</h1>
+
+                <h2>💰 Economía</h2>
+                <table>
+                    <tr><th>Avatar</th><th>Usuario</th><th>Monedas</th></tr>
+                    ${ecoHTML}
+                </table>
+
+                <h2>⚠️ Warns</h2>
+                <table>
+                    <tr><th>Avatar</th><th>Usuario</th><th>Warns</th></tr>
+                    ${warnHTML}
+                </table>
+
+            </body>
+            </html>
             `);
         });
     });
@@ -54,16 +103,13 @@ app.get('/panel', (req, res) => {
 app.get('/ping', (req, res) => res.send("pong"));
 
 // =====================
-// 🚀 SERVER
+// SERVER
 // =====================
 const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, '0.0.0.0', () => {
-    console.log("🌐 WEB ONLINE");
-});
+app.listen(PORT, '0.0.0.0');
 
 // =====================
-// 💾 DB
+// DATABASE
 // =====================
 db.run(`CREATE TABLE IF NOT EXISTS economy (
     userId TEXT PRIMARY KEY,
@@ -76,7 +122,7 @@ db.run(`CREATE TABLE IF NOT EXISTS warns (
 )`);
 
 // =====================
-// 🤖 BOT
+// BOT
 // =====================
 const client = new Client({
     intents: [
