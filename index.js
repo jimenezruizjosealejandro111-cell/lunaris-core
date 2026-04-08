@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-console.log("🔥 LUNARIS CORE MODO DIOS 🔥");
+console.log("🔥 LUNARIS CORE DIOS FINAL 🔥");
 
 const express = require('express');
 const { Client, GatewayIntentBits, Events, PermissionsBitField } = require('discord.js');
@@ -21,7 +21,7 @@ app.get('/', (req, res) => {
 });
 
 // =====================
-// 📊 PANEL PRO
+// 📊 PANEL PRO + AUTO REFRESH
 // =====================
 app.get('/panel', async (req, res) => {
 
@@ -67,6 +67,7 @@ app.get('/panel', async (req, res) => {
             <html>
             <head>
                 <title>Lunaris Panel</title>
+                <meta http-equiv="refresh" content="5">
                 <style>
                     body { background:#0f0f1a; color:white; font-family:Arial; padding:20px; }
                     h1 { color:#9b59b6; text-align:center; }
@@ -103,13 +104,15 @@ app.get('/panel', async (req, res) => {
 app.get('/ping', (req, res) => res.send("pong"));
 
 // =====================
-// SERVER
+// 🚀 SERVER
 // =====================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0');
+app.listen(PORT, '0.0.0.0', () => {
+    console.log("🌐 WEB ONLINE");
+});
 
 // =====================
-// DATABASE
+// 💾 DATABASE
 // =====================
 db.run(`CREATE TABLE IF NOT EXISTS economy (
     userId TEXT PRIMARY KEY,
@@ -122,7 +125,7 @@ db.run(`CREATE TABLE IF NOT EXISTS warns (
 )`);
 
 // =====================
-// BOT
+// 🤖 BOT
 // =====================
 const client = new Client({
     intents: [
@@ -147,7 +150,7 @@ const WELCOME_CHANNEL = "1480384374611378176";
 const AUTO_ROLE = "1480379455271600360";
 
 // =====================
-// BIENVENIDA
+// BIENVENIDA + AUTO REGISTRO
 // =====================
 client.on(Events.GuildMemberAdd, async (member) => {
     const welcome = await member.guild.channels.fetch(WELCOME_CHANNEL);
@@ -155,8 +158,20 @@ client.on(Events.GuildMemberAdd, async (member) => {
 
     await member.roles.add(AUTO_ROLE);
 
+    db.run(`INSERT OR IGNORE INTO economy VALUES (?,?)`, [member.id, 0]);
+    db.run(`INSERT OR IGNORE INTO warns VALUES (?,?)`, [member.id, 0]);
+
     welcome.send(`🌙 Bienvenido ${member}`);
     logs.send(`📥 ${member.user.tag} entró`);
+});
+
+// =====================
+// AUTO REGISTRO AL HABLAR
+// =====================
+client.on(Events.MessageCreate, (message) => {
+    if (message.author.bot) return;
+
+    db.run(`INSERT OR IGNORE INTO economy VALUES (?,?)`, [message.author.id, 0]);
 });
 
 // =====================
