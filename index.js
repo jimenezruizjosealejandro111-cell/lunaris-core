@@ -1,5 +1,9 @@
 require('dotenv').config();
 
+// 🔥 EVITA CRASHES SILENCIOSOS
+process.on('uncaughtException', console.error);
+process.on('unhandledRejection', console.error);
+
 const express = require('express');
 const { Client, GatewayIntentBits, Events, EmbedBuilder } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
@@ -9,18 +13,18 @@ const sqlite3 = require('sqlite3').verbose();
 // =====================
 const app = express();
 
-// 🔥 RUTA PRINCIPAL (para evitar 502)
+// 🔥 RESPUESTA RÁPIDA (CLAVE PARA RAILWAY)
 app.get('/', (req, res) => {
-    res.send("🌙 Lunaris Core ONLINE ✅");
+    res.status(200).send("🌙 Lunaris Core ONLINE ✅");
 });
 
-// 🔥 TEST
+// 🔥 PING TEST
 app.get('/ping', (req, res) => {
     res.send("pong");
 });
 
-// 🔥 IMPORTANTE (PUERTO DINÁMICO)
-const PORT = process.env.PORT;
+// 🔥 PUERTO DINÁMICO + FALLBACK
+const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌐 Web activa en puerto ${PORT}`);
@@ -162,7 +166,6 @@ client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
 
     const command = message.content.split(' ')[0];
-
     const logChannel = await message.client.channels.fetch(LOG_CHANNEL);
 
     // 💰 BALANCE
