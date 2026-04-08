@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-console.log("🔥 LUNARIS CORE FINAL 🔥");
+console.log("🔥 LUNARIS CORE FINAL PRO 🔥");
 
 const express = require('express');
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
@@ -20,7 +20,7 @@ app.get('/', (req, res) => {
 });
 
 // =====================
-// 🏆 LEADERBOARD PRO
+// 🏆 LEADERBOARD
 // =====================
 app.get('/panel', async (req, res) => {
 
@@ -127,7 +127,14 @@ client.on(Events.GuildMemberAdd, async (member) => {
     db.run(`INSERT OR IGNORE INTO warns VALUES (?,?)`, [member.id, 0]);
 
     welcome.send(`🌙 Bienvenido ${member}`);
-    logs.send(`📥 ${member.user.tag} entró`);
+
+    const embed = new EmbedBuilder()
+        .setColor("#2ecc71")
+        .setTitle("📥 Nuevo usuario")
+        .addFields({ name: "Usuario", value: member.user.tag })
+        .setTimestamp();
+
+    logs.send({ embeds: [embed] });
 });
 
 // =====================
@@ -190,7 +197,18 @@ client.on(Events.MessageCreate, async (message) => {
         getUser(user, () => addMoney(user, money));
 
         message.reply(`💼 +${money}`);
-        logChannel.send(`💰 ${message.author.tag} ganó ${money}`);
+
+        const embed = new EmbedBuilder()
+            .setColor("#9b59b6")
+            .setTitle("💰 Ganancia")
+            .addFields(
+                { name: "Usuario", value: message.author.tag },
+                { name: "Cantidad", value: `${money}` },
+                { name: "Comando", value: "!work" }
+            )
+            .setTimestamp();
+
+        logChannel.send({ embeds: [embed] });
     }
 
     // GIVE
@@ -214,7 +232,18 @@ client.on(Events.MessageCreate, async (message) => {
             });
 
             message.reply(`💸 diste ${amount} a ${user.username}`);
-            logChannel.send(`💸 ${message.author.tag} dio ${amount} a ${user.tag}`);
+
+            const embed = new EmbedBuilder()
+                .setColor("#e74c3c")
+                .setTitle("💸 Transferencia")
+                .addFields(
+                    { name: "De", value: message.author.tag },
+                    { name: "Para", value: user.tag },
+                    { name: "Cantidad", value: `${amount}` }
+                )
+                .setTimestamp();
+
+            logChannel.send({ embeds: [embed] });
         });
     }
 
@@ -229,11 +258,22 @@ client.on(Events.MessageCreate, async (message) => {
             db.run(`INSERT OR REPLACE INTO warns VALUES (?,?)`, [user.id, warns]);
 
             message.reply(`⚠️ ${warns}`);
-            logChannel.send(`⚠️ ${user.tag} tiene ${warns} warns`);
+
+            const embed = new EmbedBuilder()
+                .setColor("#f1c40f")
+                .setTitle("⚠️ Advertencia")
+                .addFields(
+                    { name: "Usuario", value: user.tag },
+                    { name: "Total Warns", value: `${warns}` }
+                )
+                .setTimestamp();
+
+            logChannel.send({ embeds: [embed] });
 
             if (warns >= 10) {
                 const member = await message.guild.members.fetch(user.id);
                 await member.ban();
+
                 logChannel.send(`🚫 ${user.tag} fue baneado`);
             }
         });
