@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-console.log("🔥 LUNARIS CORE FINAL PRO 🔥");
+console.log("🔥 LUNARIS CORE FULL FINAL 🔥");
 
 const express = require('express');
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder, AuditLogEvent } = require('discord.js');
@@ -10,10 +10,10 @@ const app = express();
 const db = new sqlite3.Database('./data.db');
 
 // =====================
-// 🌐 WEB DASHBOARD
+// 🌐 WEB
 // =====================
 app.get('/', (req, res) => {
-    res.send(`<h1>🌙 Lunaris Dashboard</h1><a href="/panel">Ver Ranking</a>`);
+    res.send(`<h1>🌙 Lunaris Dashboard</h1><a href="/panel">Ranking</a>`);
 });
 
 app.get('/panel', async (req, res) => {
@@ -58,14 +58,39 @@ const client = new Client({
 const cooldowns = new Map();
 
 // =====================
-// 🔍 STAFF LOGS
+// LOGS STAFF
 // =====================
 function getStaffLogs(guild) {
     return guild.channels.cache.find(c => c.name.includes("staff-logs"));
 }
 
+// =====================
+// READY
+// =====================
 client.once(Events.ClientReady, () => {
     console.log(`🤖 ${client.user.tag} ONLINE`);
+});
+
+// =====================
+// 👋 BIENVENIDA + AUTOROL
+// =====================
+client.on(Events.GuildMemberAdd, async (member) => {
+
+    const role = member.guild.roles.cache.find(r => r.name.includes("Miembro"));
+    if (role) {
+        member.roles.add(role).catch(() => {});
+    }
+
+    const channel = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
+
+    if (channel) {
+        const embed = new EmbedBuilder()
+            .setColor("#9b59b6")
+            .setTitle("🌙 Bienvenido a Lunaris")
+            .setDescription(`✨ ${member.user} ha llegado al servidor\n\nDisfruta la comunidad 🚀`);
+
+        channel.send({ embeds: [embed] });
+    }
 });
 
 // =====================
@@ -128,7 +153,6 @@ client.on(Events.MessageCreate, async (message) => {
         db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`, [money, message.author.id]);
 
         message.reply(`💼 ${money}`);
-
         logs?.send(`💰 ${message.author.tag} ganó ${money}`);
     }
 
@@ -145,13 +169,13 @@ client.on(Events.MessageCreate, async (message) => {
     }
 
     // =====================
-    // SETUP ULTRA
+    // SETUP ULTRA COMPLETO
     // =====================
     if (cmd === "!setup" && args[1] === "lunaris") {
 
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
 
-        await message.reply("🚀 Creando servidor...");
+        await message.reply("🚀 Creando servidor Lunaris...");
 
         const guild = message.guild;
 
@@ -159,53 +183,95 @@ client.on(Events.MessageCreate, async (message) => {
             try { await ch.delete(); } catch {}
         }
 
+        // ROLES
         const owner = await guild.roles.create({ name: "🌙 Owner", permissions: ["Administrator"] });
         const admin = await guild.roles.create({ name: "💎 Admin" });
         const mod = await guild.roles.create({ name: "🔥 Mod" });
+        const vip = await guild.roles.create({ name: "✨ VIP" });
+        const member = await guild.roles.create({ name: "👤 Miembro" });
 
+        // CATEGORÍAS
+        const info = await guild.channels.create({ name: "📌 INFORMACIÓN", type: 4 });
         const general = await guild.channels.create({ name: "💬 GENERAL", type: 4 });
         const media = await guild.channels.create({ name: "📸 MEDIA", type: 4 });
+        const games = await guild.channels.create({ name: "🎮 JUEGOS", type: 4 });
+        const voice = await guild.channels.create({ name: "🔊 VOZ", type: 4 });
         const staff = await guild.channels.create({ name: "🛠️ STAFF", type: 4 });
 
+        // INFO
+        await guild.channels.create({ name: "📜・reglas", type: 0, parent: info.id });
+        await guild.channels.create({ name: "📢・anuncios", type: 0, parent: info.id });
+        await guild.channels.create({ name: "👋・bienvenida", type: 0, parent: info.id });
+
+        // GENERAL
         await guild.channels.create({ name: "💭・general", type: 0, parent: general.id });
-        await guild.channels.create({ name: "📊・staff-logs", type: 0, parent: staff.id });
+        await guild.channels.create({ name: "💰・economia", type: 0, parent: general.id });
+        await guild.channels.create({ name: "😂・memes", type: 0, parent: general.id });
+        await guild.channels.create({ name: "🎉・eventos", type: 0, parent: general.id });
+
+        // MEDIA
+        await guild.channels.create({ name: "📷・fotos", type: 0, parent: media.id });
+        await guild.channels.create({ name: "🎥・clips", type: 0, parent: media.id });
+        await guild.channels.create({ name: "🎨・arte", type: 0, parent: media.id });
+
+        // JUEGOS
+        await guild.channels.create({ name: "🔫・valorant", type: 0, parent: games.id });
+        await guild.channels.create({ name: "💎・minecraft", type: 0, parent: games.id });
+        await guild.channels.create({ name: "🌌・vrchat", type: 0, parent: games.id });
+
+        // VOZ
+        await guild.channels.create({ name: "🔊・General", type: 2, parent: voice.id });
+        await guild.channels.create({ name: "🎮・Gaming", type: 2, parent: voice.id });
+
+        // STAFF PRIVADO
+        await guild.channels.create({
+            name: "📊・staff-logs",
+            type: 0,
+            parent: staff.id,
+            permissionOverwrites: [
+                { id: guild.roles.everyone, deny: ["ViewChannel"] },
+                { id: admin.id, allow: ["ViewChannel"] },
+                { id: mod.id, allow: ["ViewChannel"] }
+            ]
+        });
+
+        await guild.channels.create({
+            name: "🧾・staff-chat",
+            type: 0,
+            parent: staff.id,
+            permissionOverwrites: [
+                { id: guild.roles.everyone, deny: ["ViewChannel"] },
+                { id: admin.id, allow: ["ViewChannel"] },
+                { id: mod.id, allow: ["ViewChannel"] }
+            ]
+        });
 
         await message.member.roles.add(owner);
 
-        message.channel.send("🔥 listo");
+        message.channel.send("🔥 Lunaris listo con sistema completo");
     }
 });
 
 // =====================
-// AUDITORÍA REAL
+// AUDITORÍA
 // =====================
-
-// DELETE
 client.on(Events.MessageDelete, async (message) => {
     const logs = getStaffLogs(message.guild);
     if (!logs) return;
 
-    const fetched = await message.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.MessageDelete });
-    const entry = fetched.entries.first();
-
-    logs.send(`🗑️ ${message.author?.tag} eliminado por ${entry?.executor?.tag}`);
+    logs.send(`🗑️ Mensaje eliminado de ${message.author?.tag}`);
 });
 
-// EDIT
 client.on(Events.MessageUpdate, (oldMsg, newMsg) => {
     const logs = getStaffLogs(newMsg.guild);
-    if (!logs) return;
-
-    logs.send(`✏️ ${newMsg.author.tag} editó mensaje`);
+    logs?.send(`✏️ ${newMsg.author.tag} editó mensaje`);
 });
 
-// BAN
 client.on(Events.GuildBanAdd, (ban) => {
     const logs = getStaffLogs(ban.guild);
     logs?.send(`🔨 ${ban.user.tag} baneado`);
 });
 
-// KICK
 client.on(Events.GuildMemberRemove, (member) => {
     const logs = getStaffLogs(member.guild);
     logs?.send(`👢 ${member.user.tag} salió/kick`);
