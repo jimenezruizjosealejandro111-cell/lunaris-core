@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-console.log("🔥 LUNARIS FINAL FIX 🔥");
+console.log("🔥 LUNARIS GOD MODE FIX 🔥");
 
 const express = require('express');
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
@@ -10,7 +10,40 @@ const app = express();
 const db = new sqlite3.Database('./data.db');
 
 // =====================
-// BOT
+// 🌐 WEB (FIX 503)
+// =====================
+app.get('/', (req, res) => {
+    res.send("🌙 Lunaris Core Online");
+});
+
+app.get('/panel', (req, res) => {
+    db.all("SELECT * FROM levels ORDER BY level DESC", [], (err, rows) => {
+
+        if (err) return res.send("DB ERROR");
+
+        let html = "<h1>🏆 Ranking</h1>";
+
+        rows.forEach((u, i) => {
+            html += `<p>#${i+1} ${u.userId} - Nivel ${u.level}</p>`;
+        });
+
+        res.send(html);
+    });
+});
+
+// ⚠️ IMPORTANTE PARA RAILWAY
+app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
+    console.log("🌐 WEB ONLINE");
+});
+
+// =====================
+// 🗄️ DATABASE
+// =====================
+db.run(`CREATE TABLE IF NOT EXISTS economy (userId TEXT PRIMARY KEY, balance INTEGER)`);
+db.run(`CREATE TABLE IF NOT EXISTS levels (userId TEXT PRIMARY KEY, xp INTEGER, level INTEGER)`);
+
+// =====================
+// 🤖 BOT
 // =====================
 const client = new Client({
     intents: [
@@ -36,38 +69,65 @@ client.once(Events.ClientReady, () => {
 });
 
 // =====================
-// 👋 BIENVENIDA + AUTOROL + LOG
+// 👋 BIENVENIDA + AUTOROL
 // =====================
 client.on(Events.GuildMemberAdd, async (member) => {
 
     const role = member.guild.roles.cache.find(r => r.name === "👤 Miembro");
+    if (role) await member.roles.add(role).catch(()=>{});
 
-    if (role) {
-        await member.roles.add(role).catch(() => {});
-    }
-
-    const welcome = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
+    const channel = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
     const logs = getLogs(member.guild);
 
     const embed = new EmbedBuilder()
         .setColor("#a855f7")
         .setTitle("🌙 Bienvenido a Lunaris")
-        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-        .setDescription(`💜 ${member} ha llegado\n🚀 Disfruta la comunidad`)
-        .setFooter({ text: member.user.tag })
-        .setTimestamp();
+        .setDescription(`💜 ${member} ha llegado`)
+        .setThumbnail(member.user.displayAvatarURL());
 
-    welcome?.send({ embeds: [embed] });
-
+    channel?.send({ embeds: [embed] });
     logs?.send(`📥 ${member.user.tag} entró`);
 });
 
 // =====================
-// 🚪 SALIDA LOG
+// 🚪 SALIDA
 // =====================
 client.on(Events.GuildMemberRemove, (member) => {
-    const logs = getLogs(member.guild);
-    logs?.send(`📤 ${member.user.tag} salió`);
+    getLogs(member.guild)?.send(`📤 ${member.user.tag} salió`);
+});
+
+// =====================
+// 🧠 AUTO REGISTRO
+// =====================
+client.on(Events.MessageCreate, (message) => {
+    if (message.author.bot) return;
+
+    db.run(`INSERT OR IGNORE INTO economy VALUES (?,?)`, [message.author.id, 0]);
+    db.run(`INSERT OR IGNORE INTO levels VALUES (?,?,?)`, [message.author.id, 0, 1]);
+});
+
+// =====================
+// ⚡ XP SYSTEM
+// =====================
+client.on(Events.MessageCreate, (message) => {
+    if (message.author.bot) return;
+
+    const xpGain = Math.floor(Math.random() * 10) + 5;
+
+    db.get(`SELECT * FROM levels WHERE userId=?`, [message.author.id], (err, row) => {
+
+        let xp = (row?.xp || 0) + xpGain;
+        let level = row?.level || 1;
+
+        if (xp >= level * 100) {
+            xp = 0;
+            level++;
+
+            message.channel.send(`🎉 ${message.author} subió a nivel ${level}`);
+        }
+
+        db.run(`INSERT OR REPLACE INTO levels VALUES (?,?,?)`, [message.author.id, xp, level]);
+    });
 });
 
 // =====================
@@ -79,8 +139,44 @@ client.on(Events.MessageCreate, async (message) => {
     const args = message.content.split(" ");
     const cmd = args[0];
 
+    // 💰 BALANCE
+    if (cmd === "!balance") {
+        db.get(`SELECT * FROM economy WHERE userId=?`, [message.author.id], (err, row) => {
+            message.reply(`💰 ${row?.balance || 0}`);
+        });
+    }
+
+    // 💼 WORK
+    if (cmd === "!work") {
+        const money = Math.floor(Math.random() * 100) + 50;
+
+        db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`, [money, message.author.id]);
+
+        message.reply(`💼 Ganaste ${money}`);
+    }
+
+    // 💸 GIVE
+    if (cmd === "!give") {
+        const user = message.mentions.users.first();
+        const amount = parseInt(args[2]);
+
+        if (!user || !amount) return message.reply("❌ Uso: !give @user cantidad");
+
+        db.run(`UPDATE economy SET balance = balance - ? WHERE userId=?`, [amount, message.author.id]);
+        db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`, [amount, user.id]);
+
+        message.reply("💸 Transferido");
+    }
+
+    // 📊 LEVEL
+    if (cmd === "!level") {
+        db.get(`SELECT * FROM levels WHERE userId=?`, [message.author.id], (err, row) => {
+            message.reply(`Nivel ${row?.level || 1}`);
+        });
+    }
+
     // =====================
-    // 🛠️ SETUP LIMPIO TOTAL
+    // 🛠️ SETUP LIMPIO
     // =====================
     if (cmd === "!setup" && args[1] === "lunaris") {
 
@@ -88,95 +184,30 @@ client.on(Events.MessageCreate, async (message) => {
 
         const guild = message.guild;
 
-        await message.reply("⚠️ Reiniciando servidor completo...");
-
-        // 🧹 BORRAR CANALES
         for (const ch of guild.channels.cache.values()) {
             try { await ch.delete(); } catch {}
         }
 
-        // 🧹 BORRAR ROLES (excepto everyone y bot)
         for (const role of guild.roles.cache.values()) {
             if (role.name === "@everyone") continue;
-            if (role.managed) continue; // bot roles
+            if (role.managed) continue;
             try { await role.delete(); } catch {}
         }
 
-        // =====================
-        // 🎭 CREAR ROLES
-        // =====================
-        const owner = await guild.roles.create({
-            name: "🌙 Owner",
-            permissions: ["Administrator"]
-        });
-
-        const admin = await guild.roles.create({ name: "💎 Admin" });
-        const mod = await guild.roles.create({ name: "🔥 Mod" });
+        const owner = await guild.roles.create({ name: "🌙 Owner", permissions: ["Administrator"] });
         const member = await guild.roles.create({ name: "👤 Miembro" });
 
-        // =====================
-        // 📂 CATEGORÍAS
-        // =====================
         const info = await guild.channels.create({ name: "📌 INFORMACIÓN", type: 4 });
         const general = await guild.channels.create({ name: "💬 GENERAL", type: 4 });
-        const media = await guild.channels.create({ name: "📸 MEDIA", type: 4 });
-        const games = await guild.channels.create({ name: "🎮 JUEGOS", type: 4 });
-        const voice = await guild.channels.create({ name: "🔊 VOZ", type: 4 });
         const staff = await guild.channels.create({ name: "🛠️ STAFF", type: 4 });
 
-        // =====================
-        // 📌 INFO
-        // =====================
         await guild.channels.create({ name: "👋・bienvenida", type: 0, parent: info.id });
-        await guild.channels.create({ name: "📜・reglas", type: 0, parent: info.id });
-        await guild.channels.create({ name: "📢・anuncios", type: 0, parent: info.id });
-
-        // =====================
-        // 💬 GENERAL
-        // =====================
         await guild.channels.create({ name: "💭・general", type: 0, parent: general.id });
-        await guild.channels.create({ name: "💰・economia", type: 0, parent: general.id });
-        await guild.channels.create({ name: "😂・memes", type: 0, parent: general.id });
-        await guild.channels.create({ name: "🎉・eventos", type: 0, parent: general.id });
+        await guild.channels.create({ name: "📊・staff-logs", type: 0, parent: staff.id });
 
-        // =====================
-        // 📸 MEDIA
-        // =====================
-        await guild.channels.create({ name: "📷・fotos", type: 0, parent: media.id });
-        await guild.channels.create({ name: "🎥・clips", type: 0, parent: media.id });
-        await guild.channels.create({ name: "🎨・arte", type: 0, parent: media.id });
-
-        // =====================
-        // 🎮 JUEGOS
-        // =====================
-        await guild.channels.create({ name: "🔫・valorant", type: 0, parent: games.id });
-        await guild.channels.create({ name: "💎・minecraft", type: 0, parent: games.id });
-        await guild.channels.create({ name: "🌌・vrchat", type: 0, parent: games.id });
-
-        // =====================
-        // 🔊 VOZ
-        // =====================
-        await guild.channels.create({ name: "🔊・General", type: 2, parent: voice.id });
-        await guild.channels.create({ name: "🎮・Gaming", type: 2, parent: voice.id });
-
-        // =====================
-        // 🛠️ STAFF PRIVADO
-        // =====================
-        await guild.channels.create({
-            name: "📊・staff-logs",
-            type: 0,
-            parent: staff.id,
-            permissionOverwrites: [
-                { id: guild.roles.everyone, deny: ["ViewChannel"] },
-                { id: admin.id, allow: ["ViewChannel"] },
-                { id: mod.id, allow: ["ViewChannel"] }
-            ]
-        });
-
-        // DAR OWNER
         await message.member.roles.add(owner);
 
-        message.channel.send("🔥 Lunaris FULL RESET listo");
+        message.channel.send("🔥 Lunaris listo");
     }
 });
 
