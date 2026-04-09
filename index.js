@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-console.log("🔥 LUNARIS CORE FINAL PRO 🔥");
+console.log("🔥 LUNARIS CORE ULTRA 🔥");
 
 const express = require('express');
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
@@ -13,15 +13,9 @@ const db = new sqlite3.Database('./data.db');
 // 🌐 DASHBOARD
 // =====================
 app.get('/', (req, res) => {
-    res.send(`
-    <h1>🌙 Lunaris Dashboard</h1>
-    <a href="/panel">Abrir Leaderboard</a>
-    `);
+    res.send(`<h1>🌙 Lunaris Dashboard</h1><a href="/panel">Abrir Panel</a>`);
 });
 
-// =====================
-// 🏆 LEADERBOARD
-// =====================
 app.get('/panel', async (req, res) => {
 
     db.all("SELECT * FROM economy ORDER BY balance DESC", [], async (err, eco) => {
@@ -30,7 +24,6 @@ app.get('/panel', async (req, res) => {
         let pos = 1;
 
         for (const u of eco) {
-
             let medal = pos === 1 ? "🥇" :
                         pos === 2 ? "🥈" :
                         pos === 3 ? "🥉" : `#${pos}`;
@@ -41,13 +34,11 @@ app.get('/panel', async (req, res) => {
                 html += `
                 <div class="card">
                     <span>${medal}</span>
-                    <img src="${user.displayAvatarURL()}" class="avatar">
+                    <img src="${user.displayAvatarURL()}" width="40">
                     <span>${user.username}</span>
                     <span>${u.balance} 💰</span>
                 </div>`;
-            } catch {
-                html += `<div class="card">${medal} ${u.userId} ${u.balance}</div>`;
-            }
+            } catch {}
 
             pos++;
         }
@@ -58,17 +49,7 @@ app.get('/panel', async (req, res) => {
             <meta http-equiv="refresh" content="5">
             <style>
                 body { background:#0f0f1a; color:white; font-family:Arial; padding:20px; }
-                h1 { text-align:center; color:#9b59b6; }
-                .card {
-                    display:flex;
-                    justify-content:space-between;
-                    align-items:center;
-                    background:#1a1a2e;
-                    padding:15px;
-                    margin:10px 0;
-                    border-radius:10px;
-                }
-                .avatar { width:40px; border-radius:50%; }
+                .card { display:flex; justify-content:space-between; background:#1a1a2e; margin:10px; padding:10px; border-radius:10px; }
             </style>
         </head>
         <body>
@@ -107,34 +88,9 @@ const client = new Client({
 const cooldowns = new Map();
 
 const LOG_CHANNEL = "1480726976984518839";
-const WELCOME_CHANNEL = "1480384374611378176";
-const AUTO_ROLE = "1480379455271600360";
 
 client.once(Events.ClientReady, () => {
     console.log(`🤖 ${client.user.tag} ONLINE`);
-});
-
-// =====================
-// BIENVENIDA
-// =====================
-client.on(Events.GuildMemberAdd, async (member) => {
-    const welcome = await member.guild.channels.fetch(WELCOME_CHANNEL);
-    const logs = await member.guild.channels.fetch(LOG_CHANNEL);
-
-    await member.roles.add(AUTO_ROLE);
-
-    db.run(`INSERT OR IGNORE INTO economy VALUES (?,?)`, [member.id, 0]);
-    db.run(`INSERT OR IGNORE INTO warns VALUES (?,?)`, [member.id, 0]);
-
-    welcome.send(`🌙 Bienvenido ${member}`);
-
-    const embed = new EmbedBuilder()
-        .setColor("#2ecc71")
-        .setTitle("📥 Nuevo usuario")
-        .addFields({ name: "Usuario", value: member.user.tag })
-        .setTimestamp();
-
-    logs.send({ embeds: [embed] });
 });
 
 // =====================
@@ -203,8 +159,7 @@ client.on(Events.MessageCreate, async (message) => {
             .setTitle("💰 Ganancia")
             .addFields(
                 { name: "Usuario", value: message.author.tag },
-                { name: "Cantidad", value: `${money}` },
-                { name: "Comando", value: "!work" }
+                { name: "Cantidad", value: `${money}` }
             )
             .setTimestamp();
 
@@ -217,7 +172,7 @@ client.on(Events.MessageCreate, async (message) => {
         const amount = parseInt(args[2]);
 
         if (!user) return message.reply("❌ menciona a alguien");
-        if (!amount || amount <= 0) return message.reply("❌ cantidad inválida");
+        if (!amount) return message.reply("❌ cantidad inválida");
 
         getUser(message.author.id, (sender) => {
 
@@ -226,10 +181,7 @@ client.on(Events.MessageCreate, async (message) => {
             }
 
             db.run(`UPDATE economy SET balance = balance - ? WHERE userId=?`, [amount, message.author.id]);
-
-            getUser(user.id, () => {
-                db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`, [amount, user.id]);
-            });
+            db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`, [amount, user.id]);
 
             message.reply(`💸 diste ${amount} a ${user.username}`);
 
@@ -257,25 +209,16 @@ client.on(Events.MessageCreate, async (message) => {
 
             db.run(`INSERT OR REPLACE INTO warns VALUES (?,?)`, [user.id, warns]);
 
-            message.reply(`⚠️ ${warns}`);
-
             const embed = new EmbedBuilder()
                 .setColor("#f1c40f")
-                .setTitle("⚠️ Advertencia")
+                .setTitle("⚠️ Warn")
                 .addFields(
                     { name: "Usuario", value: user.tag },
-                    { name: "Total Warns", value: `${warns}` }
-                )
-                .setTimestamp();
+                    { name: "Total", value: `${warns}` }
+                );
 
+            message.reply(`⚠️ ${warns}`);
             logChannel.send({ embeds: [embed] });
-
-            if (warns >= 10) {
-                const member = await message.guild.members.fetch(user.id);
-                await member.ban();
-
-                logChannel.send(`🚫 ${user.tag} fue baneado`);
-            }
         });
     }
 
@@ -284,23 +227,55 @@ client.on(Events.MessageCreate, async (message) => {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return;
 
         const amount = parseInt(args[1]);
-        if (!amount) return;
-
         await message.channel.bulkDelete(amount);
 
         const embed = new EmbedBuilder()
             .setColor("#9b59b6")
-            .setTitle("🧹 Mensajes eliminados")
+            .setTitle("🧹 Clear")
             .addFields(
                 { name: "Moderador", value: message.author.tag },
-                { name: "Cantidad", value: `${amount}` },
-                { name: "Canal", value: `${message.channel}` }
-            )
-            .setTimestamp();
+                { name: "Cantidad", value: `${amount}` }
+            );
 
         logChannel.send({ embeds: [embed] });
+    }
 
-        message.reply(`🧹 ${amount} eliminados`);
+    // =====================
+    // 🚀 SETUP LUNARIS
+    // =====================
+    if (cmd === "!setup" && args[1] === "lunaris") {
+
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❌ Necesitas admin");
+        }
+
+        message.reply("🚀 Creando servidor Lunaris...");
+
+        const guild = message.guild;
+
+        for (const channel of guild.channels.cache.values()) {
+            try { await channel.delete(); } catch {}
+        }
+
+        const owner = await guild.roles.create({
+            name: "🌙 Owner",
+            color: "#9b59b6",
+            permissions: ["Administrator"]
+        });
+
+        const admin = await guild.roles.create({ name: "💎 Admin" });
+        const mod = await guild.roles.create({ name: "🔥 Mod" });
+
+        const info = await guild.channels.create({ name: "📌 INFORMACIÓN", type: 4 });
+        const chat = await guild.channels.create({ name: "💬 CHAT", type: 4 });
+
+        await guild.channels.create({ name: "📜・reglas", type: 0, parent: info.id });
+        await guild.channels.create({ name: "💭・general", type: 0, parent: chat.id });
+        await guild.channels.create({ name: "💰・economia", type: 0, parent: chat.id });
+
+        await message.member.roles.add(owner);
+
+        message.channel.send("🔥 Setup completo");
     }
 });
 
