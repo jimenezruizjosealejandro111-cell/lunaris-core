@@ -263,4 +263,3 @@ msg.reply("🔥 SETUP EMPRESA COMPLETO");
 });
 
 client.login(process.env.TOKEN);
-fix roles + autorol + tickets
