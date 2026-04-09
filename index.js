@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-console.log("🔥 LUNARIS CORE ULTRA 🔥");
+console.log("🔥 LUNARIS CORE FINAL FIX 🔥");
 
 const express = require('express');
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
@@ -10,62 +10,36 @@ const app = express();
 const db = new sqlite3.Database('./data.db');
 
 // =====================
-// 🌐 DASHBOARD
+// 🌐 WEB
 // =====================
 app.get('/', (req, res) => {
-    res.send(`<h1>🌙 Lunaris Dashboard</h1><a href="/panel">Abrir Panel</a>`);
+    res.send(`<h1>🌙 Lunaris Online</h1><a href="/panel">Panel</a>`);
 });
 
 app.get('/panel', async (req, res) => {
-
-    db.all("SELECT * FROM economy ORDER BY balance DESC", [], async (err, eco) => {
+    db.all("SELECT * FROM economy ORDER BY balance DESC", [], async (err, rows) => {
 
         let html = "";
         let pos = 1;
 
-        for (const u of eco) {
+        for (const u of rows) {
             let medal = pos === 1 ? "🥇" :
                         pos === 2 ? "🥈" :
                         pos === 3 ? "🥉" : `#${pos}`;
 
             try {
                 const user = await client.users.fetch(u.userId);
-
-                html += `
-                <div class="card">
-                    <span>${medal}</span>
-                    <img src="${user.displayAvatarURL()}" width="40">
-                    <span>${user.username}</span>
-                    <span>${u.balance} 💰</span>
-                </div>`;
+                html += `<div>${medal} ${user.username} - ${u.balance}</div>`;
             } catch {}
 
             pos++;
         }
 
-        res.send(`
-        <html>
-        <head>
-            <meta http-equiv="refresh" content="5">
-            <style>
-                body { background:#0f0f1a; color:white; font-family:Arial; padding:20px; }
-                .card { display:flex; justify-content:space-between; background:#1a1a2e; margin:10px; padding:10px; border-radius:10px; }
-            </style>
-        </head>
-        <body>
-            <h1>🌙 Lunaris Leaderboard</h1>
-            ${html}
-        </body>
-        </html>
-        `);
+        res.send(`<h1>Leaderboard</h1>${html}`);
     });
 });
 
-// =====================
-// SERVER
-// =====================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0');
+app.listen(process.env.PORT || 3000, '0.0.0.0');
 
 // =====================
 // DB
@@ -86,7 +60,6 @@ const client = new Client({
 });
 
 const cooldowns = new Map();
-
 const LOG_CHANNEL = "1480726976984518839";
 
 client.once(Events.ClientReady, () => {
@@ -102,71 +75,70 @@ client.on(Events.MessageCreate, (message) => {
 });
 
 // =====================
-// FUNCIONES
-// =====================
-function getUser(userId, cb) {
-    db.get(`SELECT * FROM economy WHERE userId=?`, [userId], (err, row) => {
-        if (!row) {
-            db.run(`INSERT INTO economy VALUES (?,?)`, [userId, 0]);
-            return cb({ balance: 0 });
-        }
-        cb(row);
-    });
-}
-
-function addMoney(userId, amount) {
-    db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`, [amount, userId]);
-}
-
-// =====================
-// COMANDOS
+// COMANDOS (ÚNICO BLOQUE)
 // =====================
 client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
 
-    const args = message.content.split(" ");
-    const cmd = args[0];
+    const args = message.content.trim().split(/\s+/);
+    const cmd = args[0].toLowerCase();
 
-    const logChannel = await message.guild.channels.fetch(LOG_CHANNEL);
+    console.log("CMD:", cmd, args);
 
+    const logChannel = await message.guild.channels.fetch(LOG_CHANNEL).catch(() => null);
+
+    // =====================
+    // TEST
+    // =====================
+    if (cmd === "!test") {
+        return message.reply("✅ Bot funcionando");
+    }
+
+    // =====================
     // BALANCE
+    // =====================
     if (cmd === "!balance") {
-        getUser(message.author.id, (data) => {
-            message.reply(`💰 ${data.balance}`);
+        db.get(`SELECT * FROM economy WHERE userId=?`, [message.author.id], (err, row) => {
+            message.reply(`💰 ${row?.balance || 0}`);
         });
     }
 
+    // =====================
     // WORK
+    // =====================
     if (cmd === "!work") {
         const user = message.author.id;
         const now = Date.now();
-        const cd = 20 * 60 * 1000;
+        const cd = 60 * 1000;
 
-        if (cooldowns.has(user)) {
-            const exp = cooldowns.get(user) + cd;
-            if (now < exp) return message.reply("⏳ espera");
+        if (cooldowns.has(user) && now < cooldowns.get(user)) {
+            return message.reply("⏳ espera");
         }
 
-        cooldowns.set(user, now);
+        cooldowns.set(user, now + cd);
 
         const money = Math.floor(Math.random() * 100) + 50;
-        getUser(user, () => addMoney(user, money));
+
+        db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`, [money, user]);
 
         message.reply(`💼 +${money}`);
 
-        const embed = new EmbedBuilder()
-            .setColor("#9b59b6")
-            .setTitle("💰 Ganancia")
-            .addFields(
-                { name: "Usuario", value: message.author.tag },
-                { name: "Cantidad", value: `${money}` }
-            )
-            .setTimestamp();
+        if (logChannel) {
+            const embed = new EmbedBuilder()
+                .setColor("#9b59b6")
+                .setTitle("💰 Ganancia")
+                .addFields(
+                    { name: "Usuario", value: message.author.tag },
+                    { name: "Cantidad", value: `${money}` }
+                );
 
-        logChannel.send({ embeds: [embed] });
+            logChannel.send({ embeds: [embed] });
+        }
     }
 
+    // =====================
     // GIVE
+    // =====================
     if (cmd === "!give") {
         const user = message.mentions.users.first();
         const amount = parseInt(args[2]);
@@ -174,32 +146,35 @@ client.on(Events.MessageCreate, async (message) => {
         if (!user) return message.reply("❌ menciona a alguien");
         if (!amount) return message.reply("❌ cantidad inválida");
 
-        getUser(message.author.id, (sender) => {
+        db.get(`SELECT * FROM economy WHERE userId=?`, [message.author.id], (err, row) => {
 
-            if (sender.balance < amount) {
+            if ((row?.balance || 0) < amount) {
                 return message.reply("❌ no tienes dinero");
             }
 
             db.run(`UPDATE economy SET balance = balance - ? WHERE userId=?`, [amount, message.author.id]);
             db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`, [amount, user.id]);
 
-            message.reply(`💸 diste ${amount} a ${user.username}`);
+            message.reply(`💸 ${amount} enviado`);
 
-            const embed = new EmbedBuilder()
-                .setColor("#e74c3c")
-                .setTitle("💸 Transferencia")
-                .addFields(
-                    { name: "De", value: message.author.tag },
-                    { name: "Para", value: user.tag },
-                    { name: "Cantidad", value: `${amount}` }
-                )
-                .setTimestamp();
+            if (logChannel) {
+                const embed = new EmbedBuilder()
+                    .setColor("#e74c3c")
+                    .setTitle("💸 Transferencia")
+                    .addFields(
+                        { name: "De", value: message.author.tag },
+                        { name: "Para", value: user.tag },
+                        { name: "Cantidad", value: `${amount}` }
+                    );
 
-            logChannel.send({ embeds: [embed] });
+                logChannel.send({ embeds: [embed] });
+            }
         });
     }
 
+    // =====================
     // WARN
+    // =====================
     if (cmd === "!warn") {
         const user = message.mentions.users.first();
         if (!user) return;
@@ -209,39 +184,48 @@ client.on(Events.MessageCreate, async (message) => {
 
             db.run(`INSERT OR REPLACE INTO warns VALUES (?,?)`, [user.id, warns]);
 
-            const embed = new EmbedBuilder()
-                .setColor("#f1c40f")
-                .setTitle("⚠️ Warn")
-                .addFields(
-                    { name: "Usuario", value: user.tag },
-                    { name: "Total", value: `${warns}` }
-                );
-
             message.reply(`⚠️ ${warns}`);
-            logChannel.send({ embeds: [embed] });
+
+            if (logChannel) {
+                const embed = new EmbedBuilder()
+                    .setColor("#f1c40f")
+                    .setTitle("⚠️ Warn")
+                    .addFields(
+                        { name: "Usuario", value: user.tag },
+                        { name: "Total", value: `${warns}` }
+                    );
+
+                logChannel.send({ embeds: [embed] });
+            }
         });
     }
 
+    // =====================
     // CLEAR
+    // =====================
     if (cmd === "!clear") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return;
 
         const amount = parseInt(args[1]);
+        if (!amount) return;
+
         await message.channel.bulkDelete(amount);
 
-        const embed = new EmbedBuilder()
-            .setColor("#9b59b6")
-            .setTitle("🧹 Clear")
-            .addFields(
-                { name: "Moderador", value: message.author.tag },
-                { name: "Cantidad", value: `${amount}` }
-            );
+        if (logChannel) {
+            const embed = new EmbedBuilder()
+                .setColor("#9b59b6")
+                .setTitle("🧹 Clear")
+                .addFields(
+                    { name: "Moderador", value: message.author.tag },
+                    { name: "Cantidad", value: `${amount}` }
+                );
 
-        logChannel.send({ embeds: [embed] });
+            logChannel.send({ embeds: [embed] });
+        }
     }
 
     // =====================
-    // 🚀 SETUP LUNARIS
+    // 💥 SETUP LUNARIS
     // =====================
     if (cmd === "!setup" && args[1] === "lunaris") {
 
@@ -249,7 +233,7 @@ client.on(Events.MessageCreate, async (message) => {
             return message.reply("❌ Necesitas admin");
         }
 
-        message.reply("🚀 Creando servidor Lunaris...");
+        await message.reply("🚀 Creando servidor Lunaris...");
 
         const guild = message.guild;
 
@@ -263,9 +247,6 @@ client.on(Events.MessageCreate, async (message) => {
             permissions: ["Administrator"]
         });
 
-        const admin = await guild.roles.create({ name: "💎 Admin" });
-        const mod = await guild.roles.create({ name: "🔥 Mod" });
-
         const info = await guild.channels.create({ name: "📌 INFORMACIÓN", type: 4 });
         const chat = await guild.channels.create({ name: "💬 CHAT", type: 4 });
 
@@ -275,8 +256,9 @@ client.on(Events.MessageCreate, async (message) => {
 
         await message.member.roles.add(owner);
 
-        message.channel.send("🔥 Setup completo");
+        return message.channel.send("🔥 Setup completado");
     }
+
 });
 
 client.login(process.env.TOKEN);
