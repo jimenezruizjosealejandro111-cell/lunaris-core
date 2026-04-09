@@ -1,66 +1,43 @@
 require('dotenv').config();
 
-console.log("🔥 LUNARIS LEGENDARY+ 🔥");
+console.log("🔥 LUNARIS LEGENDARY FINAL 🔥");
 
 const express = require('express');
-const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder, ChannelType } = require('discord.js');
+const {
+    Client,
+    GatewayIntentBits,
+    Events,
+    PermissionsBitField,
+    EmbedBuilder,
+    ChannelType,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle
+} = require('discord.js');
+
 const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 const db = new sqlite3.Database('./data.db');
 
-app.use(express.urlencoded({ extended: true }));
+// =====================
+// 🌐 WEB KEEP ALIVE
+// =====================
+app.get('/', (req, res) => res.send("🌙 Lunaris Online"));
+app.listen(process.env.PORT || 3000, "0.0.0.0");
 
 // =====================
-// DB
+// 🗄️ DATABASE
 // =====================
 db.run(`CREATE TABLE IF NOT EXISTS economy (userId TEXT PRIMARY KEY, balance INTEGER)`);
 db.run(`CREATE TABLE IF NOT EXISTS levels (userId TEXT PRIMARY KEY, xp INTEGER, level INTEGER)`);
-
-db.run(`
-CREATE TABLE IF NOT EXISTS config (
-    guildId TEXT PRIMARY KEY,
-    welcome_channel TEXT,
-    log_channel TEXT,
-    auto_role TEXT
-)
-`);
+db.run(`CREATE TABLE IF NOT EXISTS config (guildId TEXT PRIMARY KEY, welcome TEXT, logs TEXT, role TEXT)`);
 
 // =====================
-// WEB PANEL
-// =====================
-app.get('/', (req,res)=>res.send("🌙 Lunaris Legendary+"));
-
-app.get('/panel/:guildId', (req,res)=>{
-    const id = req.params.guildId;
-
-    db.get("SELECT * FROM config WHERE guildId=?", [id], (err,row)=>{
-        res.send(`
-        <h1>Lunaris Panel</h1>
-        <form method="POST" action="/save/${id}">
-        Welcome: <input name="welcome" value="${row?.welcome_channel||""}"><br>
-        Logs: <input name="logs" value="${row?.log_channel||""}"><br>
-        Role: <input name="role" value="${row?.auto_role||""}"><br>
-        <button>Guardar</button>
-        </form>
-        `);
-    });
-});
-
-app.post('/save/:guildId', (req,res)=>{
-    const {welcome,logs,role} = req.body;
-    db.run(`INSERT OR REPLACE INTO config VALUES (?,?,?,?)`,
-        [req.params.guildId, welcome, logs, role]);
-    res.send("Guardado");
-});
-
-app.listen(process.env.PORT||3000,"0.0.0.0");
-
-// =====================
-// BOT
+// 🤖 BOT
 // =====================
 const client = new Client({
-    intents:[
+    intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.GuildMembers,
@@ -68,175 +45,217 @@ const client = new Client({
     ]
 });
 
-function getLogs(guild){
-    return new Promise(resolve=>{
-        db.get("SELECT * FROM config WHERE guildId=?", [guild.id], (e,row)=>{
-            resolve(row ? guild.channels.cache.get(row.log_channel) : null);
-        });
-    });
-}
-
-client.once(Events.ClientReady, ()=>{
+client.once(Events.ClientReady, () => {
     console.log(`🤖 ${client.user.tag} ONLINE`);
 });
 
 // =====================
-// BIENVENIDA
+// 🔎 UTILS
 // =====================
-client.on(Events.GuildMemberAdd, async member=>{
-    db.get("SELECT * FROM config WHERE guildId=?", [member.guild.id], async (e,row)=>{
-        if(!row) return;
-
-        const ch = member.guild.channels.cache.get(row.welcome_channel);
-        const role = member.guild.roles.cache.get(row.auto_role);
-
-        if(role) await member.roles.add(role).catch(()=>{});
-
-        ch?.send(`🌙 Bienvenido ${member}`);
-        (await getLogs(member.guild))?.send(`📥 ${member.user.tag} entró`);
+function getConfig(guildId) {
+    return new Promise(resolve => {
+        db.get(`SELECT * FROM config WHERE guildId=?`, [guildId], (err, row) => {
+            resolve(row);
+        });
     });
+}
+
+// =====================
+// 👋 BIENVENIDA + AUTOROL
+// =====================
+client.on(Events.GuildMemberAdd, async member => {
+
+    const config = await getConfig(member.guild.id);
+    if (!config) return;
+
+    const channel = member.guild.channels.cache.get(config.welcome);
+    const role = member.guild.roles.cache.get(config.role);
+
+    if (role) await member.roles.add(role).catch(() => {});
+
+    const embed = new EmbedBuilder()
+        .setColor("#9b59b6")
+        .setTitle("🌙 Bienvenido a Lunaris")
+        .setDescription(`✨ ${member} ha llegado\n🚀 Disfruta la comunidad`);
+
+    channel?.send({ embeds: [embed] });
+
+    const logs = member.guild.channels.cache.get(config.logs);
+    logs?.send(`📥 ${member.user.tag} entró`);
 });
 
-client.on(Events.GuildMemberRemove, async m=>{
-    (await getLogs(m.guild))?.send(`📤 ${m.user.tag} salió`);
+client.on(Events.GuildMemberRemove, async member => {
+    const config = await getConfig(member.guild.id);
+    if (!config) return;
+
+    const logs = member.guild.channels.cache.get(config.logs);
+    logs?.send(`📤 ${member.user.tag} salió`);
 });
 
 // =====================
-// LOGS
+// 🧾 LOGS MENSAJES
 // =====================
-client.on(Events.MessageDelete, async m=>{
-    if(!m.guild || m.author?.bot) return;
+client.on(Events.MessageDelete, async msg => {
+    if (!msg.guild || msg.author?.bot) return;
+
+    const config = await getConfig(msg.guild.id);
+    if (!config) return;
+
+    const logs = msg.guild.channels.cache.get(config.logs);
 
     const embed = new EmbedBuilder()
         .setColor("Red")
         .setTitle("🗑️ Mensaje eliminado")
-        .setDescription(m.content || "Vacío");
+        .addFields(
+            { name: "Usuario", value: msg.author.tag },
+            { name: "Contenido", value: msg.content || "Vacío" }
+        );
 
-    (await getLogs(m.guild))?.send({embeds:[embed]});
+    logs?.send({ embeds: [embed] });
 });
 
 // =====================
-// ECONOMÍA + XP
+// 💰 ECONOMÍA
 // =====================
 const workCD = new Map();
-const dailyCD = new Map();
 
-client.on(Events.MessageCreate, async msg=>{
-    if(msg.author.bot) return;
+client.on(Events.MessageCreate, async msg => {
 
-    db.run(`INSERT OR IGNORE INTO economy VALUES (?,?)`,[msg.author.id,0]);
-    db.run(`INSERT OR IGNORE INTO levels VALUES (?,?,?)`,[msg.author.id,0,1]);
+    if (msg.author.bot) return;
+
+    db.run(`INSERT OR IGNORE INTO economy VALUES (?,?)`, [msg.author.id, 0]);
 
     const args = msg.content.split(" ");
     const cmd = args[0];
 
-    if(cmd==="!balance"){
-        db.get(`SELECT * FROM economy WHERE userId=?`,[msg.author.id],(e,row)=>{
-            msg.reply(`💰 ${row?.balance||0}`);
+    if (cmd === "!balance") {
+        db.get(`SELECT * FROM economy WHERE userId=?`, [msg.author.id], (e, row) => {
+            msg.reply(`💰 ${row?.balance || 0}`);
         });
     }
 
-    if(cmd==="!work"){
-        if(workCD.has(msg.author.id) && Date.now()<workCD.get(msg.author.id))
-            return msg.reply("⏳ 30min cooldown");
+    if (cmd === "!work") {
+        if (workCD.has(msg.author.id) && Date.now() < workCD.get(msg.author.id))
+            return msg.reply("⏳ 30 minutos cooldown");
 
-        workCD.set(msg.author.id, Date.now()+1800000);
+        workCD.set(msg.author.id, Date.now() + 1800000);
 
-        const money = Math.floor(Math.random()*100)+50;
+        const money = Math.floor(Math.random() * 100) + 50;
+
         db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`,
-            [money,msg.author.id]);
+            [money, msg.author.id]);
 
-        msg.reply(`💼 +${money}`);
+        msg.reply(`💼 Ganaste ${money}`);
     }
 
-    if(cmd==="!daily"){
-        if(dailyCD.has(msg.author.id) && Date.now()<dailyCD.get(msg.author.id))
-            return msg.reply("⏳ daily usado");
-
-        dailyCD.set(msg.author.id, Date.now()+86400000);
-
-        const money = Math.floor(Math.random()*200)+100;
-        db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`,
-            [money,msg.author.id]);
-
-        msg.reply(`🎁 ${money}`);
+    if (cmd === "!shop") {
+        msg.reply("🎮 VRChat Plus - 20000 coins\n!buy 1");
     }
 
-    if(cmd==="!shop"){
-        msg.reply("1️⃣ VRChat Plus - 20000\n!buy 1");
-    }
+    if (cmd === "!buy") {
+        db.get(`SELECT * FROM economy WHERE userId=?`, [msg.author.id], (e, row) => {
 
-    if(cmd==="!buy"){
-        db.get(`SELECT * FROM economy WHERE userId=?`,[msg.author.id],(e,row)=>{
-            if((row?.balance||0)<20000) return msg.reply("❌ sin dinero");
+            if ((row?.balance || 0) < 20000)
+                return msg.reply("❌ No tienes suficiente dinero");
 
             db.run(`UPDATE economy SET balance = balance - 20000 WHERE userId=?`,
                 [msg.author.id]);
 
-            msg.reply("🎮 Compraste VRChat Plus");
+            msg.reply("✅ Compraste VRChat Plus");
         });
     }
+});
 
-    // =====================
-    // 🎟️ TICKETS
-    // =====================
-    if(cmd==="!ticket"){
-        const ch = await msg.guild.channels.create({
-            name:`ticket-${msg.author.username}`,
-            type:ChannelType.GuildText,
-            permissionOverwrites:[
-                {id:msg.guild.roles.everyone, deny:["ViewChannel"]},
-                {id:msg.author.id, allow:["ViewChannel"]},
+// =====================
+// 🎟️ BOTÓN TICKETS
+// =====================
+client.on(Events.InteractionCreate, async interaction => {
+
+    if (!interaction.isButton()) return;
+
+    if (interaction.customId === "ticket") {
+
+        const existing = interaction.guild.channels.cache.find(c =>
+            c.name === `ticket-${interaction.user.id}`
+        );
+
+        if (existing)
+            return interaction.reply({ content: "❌ Ya tienes un ticket", ephemeral: true });
+
+        const channel = await interaction.guild.channels.create({
+            name: `ticket-${interaction.user.username}`,
+            type: ChannelType.GuildText,
+            permissionOverwrites: [
+                { id: interaction.guild.roles.everyone, deny: ["ViewChannel"] },
+                { id: interaction.user.id, allow: ["ViewChannel"] }
             ]
         });
 
-        ch.send(`🎟️ Ticket creado ${msg.author}`);
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId("close")
+                .setLabel("🔒 Cerrar")
+                .setStyle(ButtonStyle.Danger)
+        );
+
+        channel.send({
+            content: `🎟️ Ticket de ${interaction.user}`,
+            components: [row]
+        });
+
+        interaction.reply({ content: "✅ Ticket creado", ephemeral: true });
     }
 
-    if(cmd==="!close"){
-        if(!msg.channel.name.includes("ticket")) return;
+    if (interaction.customId === "close") {
+        await interaction.channel.delete().catch(()=>{});
+    }
+});
 
-        const closed = msg.guild.channels.cache.find(c=>c.name.includes("tickets-cerrados"));
+// =====================
+// ⚙️ SETUP
+// =====================
+client.on(Events.MessageCreate, async msg => {
 
-        if(closed){
-            msg.channel.setParent(closed.id);
-        }
+    if (msg.content !== "!setup lunaris") return;
 
-        msg.channel.send("🔒 Ticket cerrado");
+    const g = msg.guild;
+
+    for (const ch of g.channels.cache.values()) {
+        try { await ch.delete(); } catch {}
     }
 
-    // =====================
-    // SETUP
-    // =====================
-    if(cmd==="!setup" && args[1]==="lunaris"){
-
-        const g = msg.guild;
-
-        for(const ch of g.channels.cache.values()) try{await ch.delete();}catch{}
-        for(const r of g.roles.cache.values()){
-            if(r.name==="@everyone"||r.managed) continue;
-            try{await r.delete();}catch{}
-        }
-
-        const admin = await g.roles.create({name:"💎 Admin"});
-        const mod = await g.roles.create({name:"🔥 Mod"});
-        const member = await g.roles.create({name:"👤 Miembro"});
-
-        const info = await g.channels.create({name:"📌 INFO",type:4});
-        const staff = await g.channels.create({name:"🛠 STAFF",type:4});
-
-        const welcome = await g.channels.create({name:"bienvenida",type:0,parent:info.id});
-        const logs = await g.channels.create({name:"staff-logs",type:0,parent:staff.id});
-
-        await g.channels.create({name:"tickets",type:0,parent:staff.id});
-        await g.channels.create({name:"tickets-cerrados",type:0,parent:staff.id});
-
-        db.run(`INSERT OR REPLACE INTO config VALUES (?,?,?,?)`,
-            [g.id, welcome.id, logs.id, member.id]);
-
-        msg.reply("🔥 Setup completo");
+    for (const r of g.roles.cache.values()) {
+        if (r.name === "@everyone" || r.managed) continue;
+        try { await r.delete(); } catch {}
     }
 
+    const member = await g.roles.create({ name: "👤 Miembro" });
+
+    const info = await g.channels.create({ name: "📌 INFO", type: 4 });
+    const general = await g.channels.create({ name: "💬 GENERAL", type: 4 });
+    const staff = await g.channels.create({ name: "🛠 STAFF", type: 4 });
+
+    const welcome = await g.channels.create({ name: "bienvenida", type: 0, parent: info.id });
+    const logs = await g.channels.create({ name: "staff-logs", type: 0, parent: staff.id });
+
+    const tickets = await g.channels.create({ name: "tickets", type: 0, parent: staff.id });
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("ticket")
+            .setLabel("🎟️ Crear Ticket")
+            .setStyle(ButtonStyle.Primary)
+    );
+
+    tickets.send({
+        content: "🎟️ Soporte Lunaris",
+        components: [row]
+    });
+
+    db.run(`INSERT OR REPLACE INTO config VALUES (?,?,?,?)`,
+        [g.id, welcome.id, logs.id, member.id]);
+
+    msg.reply("🔥 Setup completo");
 });
 
 client.login(process.env.TOKEN);
