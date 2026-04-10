@@ -90,8 +90,8 @@ client.on("interactionCreate", async i => {
     }
 
     if (i.commandName === "daily") {
-      db.set(user, db.get(user) + 500);
-      return i.reply("🎁 +500 coins");
+      db.set(user, db.get(user) + 100);
+      return i.reply("🎁 +100 coins");
     }
 
     if (i.commandName === "shop") {
