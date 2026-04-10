@@ -134,17 +134,36 @@ client.on("messageCreate", async msg => {
   const ticketsCat = await g.channels.create({ name: "🎟️ TICKETS", type: ChannelType.GuildCategory });
   const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
 
-  // CANALES
+  // INFO
   await g.channels.create({ name: "📢・bienvenida", parent: info.id });
   await g.channels.create({ name: "📣・anuncios", parent: info.id });
 
+  // GENERAL
   await g.channels.create({ name: "💬・general", parent: general.id });
   await g.channels.create({ name: "💰・economia", parent: general.id });
   await g.channels.create({ name: "😂・memes", parent: general.id });
+  await g.channels.create({ name: "🎉・eventos", parent: general.id });
 
+  // MEDIA
   await g.channels.create({ name: "📸・fotos", parent: media.id });
+  await g.channels.create({ name: "🎬・clips", parent: media.id });
+  await g.channels.create({ name: "🎨・arte", parent: media.id });
+  await g.channels.create({ name: "📱・selfies", parent: media.id });
 
+  // JUEGOS
+  await g.channels.create({ name: "🎮・general-gaming", parent: games.id });
+  await g.channels.create({ name: "🔫・valorant", parent: games.id });
+  await g.channels.create({ name: "⛏️・minecraft", parent: games.id });
   await g.channels.create({ name: "🌌・vrchat", parent: games.id });
+  await g.channels.create({ name: "🕹️・otros-juegos", parent: games.id });
+
+  // VOICE GENERAL
+  await g.channels.create({ name: "🔊・General", type: ChannelType.GuildVoice, parent: general.id });
+  await g.channels.create({ name: "🎧・Chill", type: ChannelType.GuildVoice, parent: general.id });
+
+  // VOICE GAMING
+  await g.channels.create({ name: "🎮・Gaming 1", type: ChannelType.GuildVoice, parent: games.id });
+  await g.channels.create({ name: "🎮・Gaming 2", type: ChannelType.GuildVoice, parent: games.id });
 
   // STAFF PRIVADO
   await g.channels.create({
@@ -166,6 +185,17 @@ client.on("messageCreate", async msg => {
     ]
   });
 
+  await g.channels.create({
+    name: "🔒・Staff Voice",
+    type: ChannelType.GuildVoice,
+    parent: staff.id,
+    permissionOverwrites: [
+      { id: g.roles.everyone, deny: ["ViewChannel"] },
+      { id: owner.id, allow: ["ViewChannel"] },
+      { id: admin.id, allow: ["ViewChannel"] }
+    ]
+  });
+
   // TICKETS
   const ticketPanel = await g.channels.create({
     name: "🎫・crear-ticket",
@@ -173,8 +203,8 @@ client.on("messageCreate", async msg => {
   });
 
   const embed = new EmbedBuilder()
-    .setTitle("🎟️ Tickets")
-    .setDescription("Presiona el botón");
+    .setTitle("🎟️ Sistema de Tickets")
+    .setDescription("Presiona el botón para crear un ticket");
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -185,7 +215,7 @@ client.on("messageCreate", async msg => {
 
   await ticketPanel.send({ embeds: [embed], components: [row] });
 
-  msg.channel.send("🔥 Setup listo");
+  msg.channel.send("🔥 Setup completo PRO");
 });
 
 // ================= TICKETS =================
@@ -213,12 +243,12 @@ client.on("guildMemberAdd", member => {
   if (role) member.roles.add(role);
 });
 
-// ================= LOGS MODO DIOS =================
+// ================= LOGS =================
 function logs(guild) {
   return guild.channels.cache.find(c => c.name === "📜・staff-logs");
 }
 
-client.on("messageDelete", async m => {
+client.on("messageDelete", m => {
   if (!m.guild || m.author?.bot) return;
   logs(m.guild)?.send(`🗑️ ${m.author.tag}: ${m.content}`);
 });
