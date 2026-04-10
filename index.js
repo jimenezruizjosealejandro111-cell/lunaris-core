@@ -1,265 +1,233 @@
-require('dotenv').config();
-
-const express = require('express');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-
+require("dotenv").config();
 const {
-Client,
-GatewayIntentBits,
-Events,
-ChannelType,
-ActionRowBuilder,
-ButtonBuilder,
-ButtonStyle
-} = require('discord.js');
+  Client,
+  GatewayIntentBits,
+  Partials,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  PermissionsBitField,
+  ChannelType,
+  SlashCommandBuilder,
+  REST,
+  Routes
+} = require("discord.js");
 
-const sqlite3 = require('sqlite3').verbose();
-const db = new sqlite3.Database('./data.db');
-
-// ================= DB =================
-db.run(`CREATE TABLE IF NOT EXISTS economy (userId TEXT PRIMARY KEY, balance INTEGER)`);
-
-// ================= WEB =================
-const app = express();
-let sessions = {};
-
-app.get('/', (req,res)=>{
-res.send(`<h1>Lunaris</h1><a href="/login">Login</a>`);
-});
-
-app.get('/login',(req,res)=>{
-const url = `https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify`;
-res.redirect(url);
-});
-
-app.get('/callback', async (req,res)=>{
-try{
-
-const code = req.query.code;
-
-const data = new URLSearchParams({
-client_id: process.env.CLIENT_ID,
-client_secret: process.env.CLIENT_SECRET,
-grant_type:'authorization_code',
-code,
-redirect_uri: process.env.REDIRECT_URI
-});
-
-const token = await fetch('https://discord.com/api/oauth2/token',{
-method:'POST',
-body:data,
-headers:{'Content-Type':'application/x-www-form-urlencoded'}
-});
-
-const tokenData = await token.json();
-
-if(!tokenData.access_token) return res.send("Error OAuth");
-
-const userRes = await fetch('https://discord.com/api/users/@me',{
-headers:{authorization:`Bearer ${tokenData.access_token}`}
-});
-
-const user = await userRes.json();
-
-sessions[user.id] = user;
-
-res.redirect(`/panel?user=${user.id}`);
-
-}catch(e){
-res.send("OAuth error");
-}
-});
-
-app.get('/panel',(req,res)=>{
-const user = sessions[req.query.user];
-if(!user) return res.redirect('/login');
-
-res.send(`<h1>Panel Lunaris</h1><p>${user.username}</p>`);
-});
-
-app.listen(process.env.PORT || 3000,"0.0.0.0");
-
-// ================= BOT =================
 const client = new Client({
-intents:[
-GatewayIntentBits.Guilds,
-GatewayIntentBits.GuildMessages,
-GatewayIntentBits.GuildMembers,
-GatewayIntentBits.MessageContent
-]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers],
+  partials: [Partials.Channel]
 });
 
-client.once(Events.ClientReady, ()=>{
-console.log(`ONLINE ${client.user.tag}`);
+const db = new Map();
+const cooldowns = new Map();
+
+// ================== READY ==================
+client.once("ready", async () => {
+  console.log(`✅ ${client.user.tag} listo`);
+
+  const commands = [
+    new SlashCommandBuilder().setName("work").setDescription("Trabajar"),
+    new SlashCommandBuilder().setName("balance").setDescription("Ver tu dinero"),
+    new SlashCommandBuilder().setName("daily").setDescription("Recompensa diaria"),
+    new SlashCommandBuilder().setName("shop").setDescription("Tienda"),
+    new SlashCommandBuilder()
+      .setName("buy")
+      .setDescription("Comprar")
+      .addStringOption(o =>
+        o.setName("item")
+          .setDescription("Nombre del item")
+          .setRequired(true))
+  ].map(c => c.toJSON());
+
+  const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+  await rest.put(
+    Routes.applicationCommands(process.env.CLIENT_ID),
+    { body: commands }
+  );
 });
 
-// ================= ECONOMIA =================
-const cooldown = new Map();
+// ================== SETUP ==================
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-client.on(Events.MessageCreate, async msg=>{
-if(msg.author.bot) return;
+  const user = interaction.user.id;
+  if (!db.has(user)) db.set(user, 0);
 
-db.run(`INSERT OR IGNORE INTO economy VALUES (?,?)`,[msg.author.id,0]);
+  // WORK
+  if (interaction.commandName === "work") {
+    const now = Date.now();
+    const last = cooldowns.get(user) || 0;
 
-if(msg.content === "!work"){
-if(cooldown.has(msg.author.id) && Date.now() < cooldown.get(msg.author.id))
-return msg.reply("⏳ Espera 30 min");
+    if (now - last < 1800000) {
+      return interaction.reply({ content: "⏳ Espera 30 minutos", ephemeral: true });
+    }
 
-cooldown.set(msg.author.id, Date.now()+1800000);
+    const earn = Math.floor(Math.random() * 200) + 50;
+    db.set(user, db.get(user) + earn);
+    cooldowns.set(user, now);
 
-const money = Math.floor(Math.random()*100)+50;
+    return interaction.reply(`💼 Ganaste ${earn} coins`);
+  }
 
-db.run(`UPDATE economy SET balance = balance + ? WHERE userId=?`,
-[money,msg.author.id]);
+  // BALANCE
+  if (interaction.commandName === "balance") {
+    return interaction.reply(`💰 Tienes ${db.get(user)} coins`);
+  }
 
-msg.reply(`💼 Ganaste ${money}`);
-}
+  // DAILY
+  if (interaction.commandName === "daily") {
+    db.set(user, db.get(user) + 500);
+    return interaction.reply("🎁 Recibiste 500 coins");
+  }
 
-if(msg.content === "!balance"){
-db.get(`SELECT balance FROM economy WHERE userId=?`,
-[msg.author.id],
-(err,row)=>{
-msg.reply(`💰 ${row.balance}`);
-});
-}
+  // SHOP
+  if (interaction.commandName === "shop") {
+    return interaction.reply("🛒 VRChat+ — 20000 coins");
+  }
 
-if(msg.content === "!daily"){
-db.run(`UPDATE economy SET balance = balance + 500 WHERE userId=?`,
-[msg.author.id]);
-msg.reply("🎁 +500 diario");
-}
+  // BUY
+  if (interaction.commandName === "buy") {
+    const item = interaction.options.getString("item");
 
-if(msg.content === "!shop"){
-msg.reply("🛒 VRChat+ = 20000 coins");
-}
+    if (item === "vrchat+") {
+      if (db.get(user) < 20000)
+        return interaction.reply("❌ No tienes suficientes coins");
 
-if(msg.content === "!buy"){
-db.get(`SELECT balance FROM economy WHERE userId=?`,
-[msg.author.id],
-(err,row)=>{
-if(row.balance < 20000) return msg.reply("❌ No tienes suficiente");
-
-db.run(`UPDATE economy SET balance = balance - 20000 WHERE userId=?`,
-[msg.author.id]);
-
-msg.reply("✅ Compraste VRChat+");
-});
-}
-});
-
-// ================= BIENVENIDA + AUTOROL =================
-client.on(Events.GuildMemberAdd, async member=>{
-
-const role = member.guild.roles.cache.find(r=>r.name==="👤 Miembro");
-if(role) member.roles.add(role);
-
-const channel = member.guild.channels.cache.find(c=>c.name==="bienvenida");
-
-if(channel){
-channel.send(`🌙 Bienvenido ${member.user}`);
-}
+      db.set(user, db.get(user) - 20000);
+      return interaction.reply("✅ Compraste VRChat+");
+    }
+  }
 });
 
-// ================= LOGS =================
-client.on(Events.MessageDelete, async msg=>{
-const log = msg.guild.channels.cache.find(c=>c.name==="staff-logs");
-if(log) log.send(`🗑️ ${msg.author?.tag}: ${msg.content}`);
+// ================== AUTO SETUP SERVER ==================
+client.on("messageCreate", async msg => {
+  if (msg.content === "!setup") {
+    const g = msg.guild;
+
+    // ROLES
+    const owner = await g.roles.create({ name: "👑 Owner" });
+    const admin = await g.roles.create({ name: "🔥 Admin" });
+    const mod = await g.roles.create({ name: "🛠 Mod" });
+    const member = await g.roles.create({ name: "👤 Miembro" });
+
+    await msg.member.roles.add(owner);
+
+    // CATEGORIAS
+    const info = await g.channels.create({ name: "📌 INFO", type: ChannelType.GuildCategory });
+    const general = await g.channels.create({ name: "💬 GENERAL", type: ChannelType.GuildCategory });
+    const media = await g.channels.create({ name: "📸 MEDIA", type: ChannelType.GuildCategory });
+    const games = await g.channels.create({ name: "🎮 JUEGOS", type: ChannelType.GuildCategory });
+    const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
+
+    // CANALES
+    await g.channels.create({ name: "📢・bienvenida", parent: info.id });
+    await g.channels.create({ name: "📣・anuncios", parent: info.id });
+
+    await g.channels.create({ name: "💬・general", parent: general.id });
+    await g.channels.create({ name: "💰・economia", parent: general.id });
+    await g.channels.create({ name: "😂・memes", parent: general.id });
+    await g.channels.create({ name: "🎉・eventos", parent: general.id });
+
+    await g.channels.create({ name: "📸・fotos", parent: media.id });
+    await g.channels.create({ name: "🎬・clips", parent: media.id });
+
+    await g.channels.create({ name: "🔫・valorant", parent: games.id });
+    await g.channels.create({ name: "⛏️・minecraft", parent: games.id });
+    await g.channels.create({ name: "🌌・vrchat", parent: games.id });
+
+    // STAFF PRIVADO
+    const staffLogs = await g.channels.create({
+      name: "📜・staff-logs",
+      parent: staff.id,
+      permissionOverwrites: [
+        { id: g.roles.everyone, deny: ["ViewChannel"] },
+        { id: msg.member.id, allow: ["ViewChannel"] }
+      ]
+    });
+
+    const ticketsCat = await g.channels.create({
+      name: "🎟️ TICKETS",
+      type: ChannelType.GuildCategory
+    });
+
+    const ticketPanel = await g.channels.create({
+      name: "🎫・crear-ticket",
+      parent: ticketsCat.id
+    });
+
+    const staffChat = await g.channels.create({
+      name: "💬・staff-chat",
+      parent: staff.id,
+      permissionOverwrites: [
+        { id: g.roles.everyone, deny: ["ViewChannel"] },
+        { id: msg.member.id, allow: ["ViewChannel"] }
+      ]
+    });
+
+    const closed = await g.channels.create({
+      name: "📁・tickets-cerrados",
+      parent: staff.id,
+      permissionOverwrites: [
+        { id: g.roles.everyone, deny: ["ViewChannel"] },
+        { id: msg.member.id, allow: ["ViewChannel"] }
+      ]
+    });
+
+    // PANEL TICKETS
+    const embed = new EmbedBuilder()
+      .setTitle("🎟️ Sistema de Tickets")
+      .setDescription("Presiona el botón para crear un ticket");
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("crear_ticket")
+        .setLabel("Crear Ticket")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    await ticketPanel.send({ embeds: [embed], components: [row] });
+
+    msg.reply("🔥 Setup completo");
+  }
 });
 
-client.on(Events.MessageUpdate, async (oldMsg,newMsg)=>{
-const log = oldMsg.guild.channels.cache.find(c=>c.name==="staff-logs");
-if(log) log.send(`✏️ ${oldMsg.content} → ${newMsg.content}`);
+// ================== TICKETS ==================
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isButton()) return;
+
+  if (interaction.customId === "crear_ticket") {
+    const channel = await interaction.guild.channels.create({
+      name: `ticket-${interaction.user.username}`,
+      type: ChannelType.GuildText,
+      permissionOverwrites: [
+        { id: interaction.guild.roles.everyone, deny: ["ViewChannel"] },
+        { id: interaction.user.id, allow: ["ViewChannel"] }
+      ]
+    });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("cerrar_ticket")
+        .setLabel("Cerrar")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    channel.send({ content: "🎫 Ticket creado", components: [row] });
+
+    interaction.reply({ content: "✅ Ticket creado", ephemeral: true });
+  }
+
+  if (interaction.customId === "cerrar_ticket") {
+    await interaction.channel.delete();
+  }
 });
 
-// ================= TICKETS =================
-async function panelTickets(channel){
-
-const row = new ActionRowBuilder().addComponents(
-new ButtonBuilder()
-.setCustomId("ticket")
-.setLabel("🎟 Crear Ticket")
-.setStyle(ButtonStyle.Primary)
-);
-
-await channel.send({content:"🎟 Soporte",components:[row]});
-}
-
-client.on(Events.InteractionCreate, async i=>{
-if(!i.isButton()) return;
-
-if(i.customId === "ticket"){
-const ch = await i.guild.channels.create({
-name:`ticket-${i.user.username}`,
-type:ChannelType.GuildText,
-parent: i.guild.channels.cache.find(c=>c.name==="TICKETS")?.id,
-permissionOverwrites:[
-{id:i.guild.roles.everyone,deny:["ViewChannel"]},
-{id:i.user.id,allow:["ViewChannel"]}
-]
+// ================== AUTO ROL ==================
+client.on("guildMemberAdd", async member => {
+  const role = member.guild.roles.cache.find(r => r.name.includes("Miembro"));
+  if (role) member.roles.add(role);
 });
 
-ch.send(`🎟 Ticket de ${i.user}`);
-i.reply({content:"Ticket creado",ephemeral:true});
-}
-});
-
-// ================= SETUP =================
-client.on(Events.MessageCreate, async msg=>{
-
-if(msg.content !== "!setup lunaris") return;
-
-const g = msg.guild;
-
-// BORRAR TODO
-for(const ch of g.channels.cache.values()) try{await ch.delete()}catch{}
-for(const r of g.roles.cache.values()){
-if(r.name==="@everyone"||r.managed) continue;
-try{await r.delete()}catch{}
-}
-
-// ROLES
-await g.roles.create({name:"👤 Miembro"});
-await g.roles.create({name:"💎 Admin"});
-
-// CATEGORIAS
-const info = await g.channels.create({name:"INFO",type:4});
-const general = await g.channels.create({name:"GENERAL",type:4});
-const media = await g.channels.create({name:"MEDIA",type:4});
-const games = await g.channels.create({name:"JUEGOS",type:4});
-const ticketsCat = await g.channels.create({name:"TICKETS",type:4});
-const staff = await g.channels.create({name:"STAFF",type:4});
-
-// CANALES
-await g.channels.create({name:"bienvenida",parent:info.id,type:0});
-await g.channels.create({name:"anuncios",parent:info.id,type:0});
-
-await g.channels.create({name:"general",parent:general.id,type:0});
-await g.channels.create({name:"economia",parent:general.id,type:0});
-await g.channels.create({name:"memes",parent:general.id,type:0});
-await g.channels.create({name:"eventos",parent:general.id,type:0});
-
-await g.channels.create({name:"fotos",parent:media.id,type:0});
-await g.channels.create({name:"clips",parent:media.id,type:0});
-
-await g.channels.create({name:"valorant",parent:games.id,type:0});
-await g.channels.create({name:"minecraft",parent:games.id,type:0});
-await g.channels.create({name:"vrchat",parent:games.id,type:0});
-
-const ticketChannel = await g.channels.create({name:"crear-ticket",parent:ticketsCat.id,type:0});
-
-await panelTickets(ticketChannel);
-
-// STAFF PRIVADO
-const staffLogs = await g.channels.create({
-name:"staff-logs",
-parent:staff.id,
-permissionOverwrites:[
-{id:g.roles.everyone,deny:["ViewChannel"]},
-{id:msg.author.id,allow:["ViewChannel"]}
-]
-});
-
-msg.reply("🔥 SETUP EMPRESA COMPLETO");
-});
-
+// ================== LOGIN ==================
 client.login(process.env.TOKEN);
