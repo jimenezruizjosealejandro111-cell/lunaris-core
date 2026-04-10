@@ -57,54 +57,57 @@ client.once("ready", async () => {
   await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
 });
 
-// ================= FUNCION UTIL =================
+// ================= FUNCION =================
 function getChannel(guild, name) {
   return guild.channels.cache.find(c => c.name === name);
 }
 
 // ================= SLASH =================
 client.on("interactionCreate", async i => {
-  if (!i.isChatInputCommand()) return;
+  if (!i.isChatInputCommand() && !i.isButton()) return;
 
   const user = i.user.id;
   if (!db.has(user)) db.set(user, 0);
 
-  if (i.commandName === "work") {
-    const now = Date.now();
-    const last = cooldowns.get(user) || 0;
+  // ECONOMIA
+  if (i.isChatInputCommand()) {
+    if (i.commandName === "work") {
+      const now = Date.now();
+      const last = cooldowns.get(user) || 0;
 
-    if (now - last < 1800000)
-      return i.reply({ content: "⏳ Espera 30 min", ephemeral: true });
+      if (now - last < 1800000)
+        return i.reply({ content: "⏳ Espera 30 min", ephemeral: true });
 
-    const money = Math.floor(Math.random() * 200) + 50;
-    db.set(user, db.get(user) + money);
-    cooldowns.set(user, now);
+      const money = Math.floor(Math.random() * 200) + 50;
+      db.set(user, db.get(user) + money);
+      cooldowns.set(user, now);
 
-    return i.reply(`💼 Ganaste ${money}`);
+      return i.reply(`💼 Ganaste ${money}`);
+    }
+
+    if (i.commandName === "balance") {
+      return i.reply(`💰 ${db.get(user)} coins`);
+    }
+
+    if (i.commandName === "daily") {
+      db.set(user, db.get(user) + 500);
+      return i.reply("🎁 +500 coins");
+    }
+
+    if (i.commandName === "shop") {
+      return i.reply("🛒 VRChat+ = 20000 coins");
+    }
+
+    if (i.commandName === "buy") {
+      if (db.get(user) < 20000)
+        return i.reply("❌ No tienes dinero");
+
+      db.set(user, db.get(user) - 20000);
+      return i.reply("✅ Compraste VRChat+");
+    }
   }
 
-  if (i.commandName === "balance") {
-    return i.reply(`💰 ${db.get(user)} coins`);
-  }
-
-  if (i.commandName === "daily") {
-    db.set(user, db.get(user) + 500);
-    return i.reply("🎁 +500 coins");
-  }
-
-  if (i.commandName === "shop") {
-    return i.reply("🛒 VRChat+ = 20000 coins");
-  }
-
-  if (i.commandName === "buy") {
-    if (db.get(user) < 20000)
-      return i.reply("❌ No tienes dinero");
-
-    db.set(user, db.get(user) - 20000);
-    return i.reply("✅ Compraste VRChat+");
-  }
-
-  // BOTON TICKET
+  // TICKET
   if (i.isButton() && i.customId === "ticket") {
     const ch = await i.guild.channels.create({
       name: `ticket-${i.user.username}`,
@@ -153,40 +156,47 @@ client.on("messageCreate", async msg => {
   const ticketsCat = await g.channels.create({ name: "🎟️ TICKETS", type: ChannelType.GuildCategory });
   const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
 
-  // FUNCION CREAR CANAL + MENSAJE
-  async function createChannel(name, parent, message) {
+  // FUNCION CREAR CANAL
+  async function createChannel(name, parent, text) {
     const ch = await g.channels.create({ name, parent });
-    if (message) ch.send(message);
+
+    if (text) {
+      const embed = new EmbedBuilder()
+        .setColor("#2b2d31")
+        .setDescription(text);
+
+      ch.send({ embeds: [embed], flags: 4096 });
+    }
   }
 
   // INFO
-  await createChannel("📢・bienvenida", info.id, "🌙 Bienvenido a Lunaris");
-  await createChannel("📣・anuncios", info.id, "📢 Solo staff puede anunciar");
+  await createChannel("📢・bienvenida", info.id, "🌙 Bienvenido a Lunaris. Lee las reglas.");
+  await createChannel("📣・anuncios", info.id, "📢 Solo anuncios oficiales.");
 
   // GENERAL
-  await createChannel("💬・general", general.id, "💬 Chat principal");
-  await createChannel("💰・economia", general.id, "💰 Usa /work /shop /balance");
-  await createChannel("😂・memes", general.id, "😂 Envía memes");
-  await createChannel("🎉・eventos", general.id, "🎉 Eventos del server");
+  await createChannel("💬・general", general.id, "💬 Chat principal del servidor.");
+  await createChannel("💰・economia", general.id, "💰 Usa /work /shop.");
+  await createChannel("😂・memes", general.id, "😂 Comparte memes.");
+  await createChannel("🎉・eventos", general.id, "🎉 Eventos.");
 
   // MEDIA
-  await createChannel("📸・fotos", media.id, "📸 Comparte fotos");
-  await createChannel("🎬・clips", media.id, "🎬 Clips");
-  await createChannel("🎨・arte", media.id, "🎨 Arte");
-  await createChannel("📱・selfies", media.id, "📱 Selfies");
+  await createChannel("📸・fotos", media.id, "📸 Comparte fotos.");
+  await createChannel("🎬・clips", media.id, "🎬 Clips.");
+  await createChannel("🎨・arte", media.id, "🎨 Arte.");
+  await createChannel("📱・selfies", media.id, "📱 Selfies.");
 
-  // GAMES
-  await createChannel("🎮・general-gaming", games.id, "🎮 Gaming general");
-  await createChannel("🔫・valorant", games.id, "🔫 Valorant");
-  await createChannel("⛏️・minecraft", games.id, "⛏️ Minecraft");
-  await createChannel("🌌・vrchat", games.id, "🌌 VRChat");
-  await createChannel("🕹️・otros-juegos", games.id, "🕹️ Otros juegos");
+  // JUEGOS
+  await createChannel("🎮・general-gaming", games.id, "🎮 Gaming.");
+  await createChannel("🔫・valorant", games.id, "🔫 Valorant.");
+  await createChannel("⛏️・minecraft", games.id, "⛏️ Minecraft.");
+  await createChannel("🌌・vrchat", games.id, "🌌 VRChat.");
+  await createChannel("🕹️・otros-juegos", games.id, "🕹️ Otros juegos.");
 
   // VOICE
   await g.channels.create({ name: "🔊 General", type: ChannelType.GuildVoice, parent: general.id });
   await g.channels.create({ name: "🎮 Gaming", type: ChannelType.GuildVoice, parent: games.id });
 
-  // STAFF PRIVADO
+  // STAFF
   await g.channels.create({
     name: "📜・staff-logs",
     parent: staff.id,
@@ -238,11 +248,13 @@ client.on("guildMemberAdd", async member => {
 
   if (welcome) {
     const embed = new EmbedBuilder()
-      .setColor("Purple")
-      .setTitle("🌙 Nuevo miembro")
-      .setDescription(`${member.user} ha llegado`);
+      .setColor("#7a00ff")
+      .setTitle("🌙 Bienvenido a Lunaris")
+      .setDescription(`✨ ${member.user} ha llegado al servidor`)
+      .setThumbnail(member.user.displayAvatarURL())
+      .setTimestamp();
 
-    welcome.send({ embeds: [embed] });
+    welcome.send({ embeds: [embed], flags: 4096 });
   }
 
   logs?.send(`📥 ${member.user.tag} entró`);
@@ -251,23 +263,21 @@ client.on("guildMemberAdd", async member => {
 // ================= LOGS =================
 client.on("messageDelete", async m => {
   if (!m.guild || m.author?.bot) return;
-  const logs = getChannel(m.guild, "📜・staff-logs");
-
-  logs?.send(`🗑 ${m.author.tag}: ${m.content}`);
+  getChannel(m.guild, "📜・staff-logs")?.send(`🗑 ${m.author.tag}: ${m.content}`);
 });
 
 client.on("messageUpdate", async (o, n) => {
   if (!o.guild || o.author?.bot) return;
   if (o.content === n.content) return;
+  getChannel(o.guild, "📜・staff-logs")?.send(`✏️ ${o.author.tag}`);
+});
 
-  const logs = getChannel(o.guild, "📜・staff-logs");
-
-  logs?.send(`✏️ ${o.author.tag}: ${o.content} → ${n.content}`);
+client.on("guildBanAdd", async ban => {
+  getChannel(ban.guild, "📜・staff-logs")?.send(`🔨 ${ban.user.tag} baneado`);
 });
 
 client.on("guildMemberRemove", m => {
-  const logs = getChannel(m.guild, "📜・staff-logs");
-  logs?.send(`📤 ${m.user.tag} salió`);
+  getChannel(m.guild, "📜・staff-logs")?.send(`📤 ${m.user.tag} salió`);
 });
 
 // ================= LOGIN =================
