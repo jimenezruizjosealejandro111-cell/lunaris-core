@@ -1,6 +1,6 @@
 require("dotenv").config();
 
-// ================= WEB (FIX 502) =================
+// ================= WEB =================
 const express = require("express");
 const app = express();
 
@@ -19,12 +19,11 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
-  SlashCommandBuilder,
   REST,
-  Routes
+  Routes,
+  SlashCommandBuilder
 } = require("discord.js");
 
-// ⚠️ INTENTS COMPLETOS (FIX SETUP)
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -40,7 +39,7 @@ const cooldowns = new Map();
 
 // ================= READY =================
 client.once("ready", async () => {
-  console.log(`✅ ${client.user.tag} ONLINE`);
+  console.log(`🔥 ${client.user.tag} ONLINE`);
 
   const commands = [
     new SlashCommandBuilder().setName("work").setDescription("Trabajar"),
@@ -51,9 +50,7 @@ client.once("ready", async () => {
       .setName("buy")
       .setDescription("Comprar")
       .addStringOption(o =>
-        o.setName("item")
-          .setDescription("Item")
-          .setRequired(true))
+        o.setName("item").setDescription("Item").setRequired(true))
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
@@ -61,73 +58,81 @@ client.once("ready", async () => {
 });
 
 // ================= SLASH =================
-client.on("interactionCreate", async interaction => {
-  if (!interaction.isChatInputCommand()) return;
+client.on("interactionCreate", async i => {
+  if (!i.isChatInputCommand()) return;
 
-  const user = interaction.user.id;
+  const user = i.user.id;
   if (!db.has(user)) db.set(user, 0);
 
-  if (interaction.commandName === "work") {
+  if (i.commandName === "work") {
     const now = Date.now();
     const last = cooldowns.get(user) || 0;
 
     if (now - last < 1800000)
-      return interaction.reply({ content: "⏳ Espera 30 min", ephemeral: true });
+      return i.reply({ content: "⏳ Espera 30 min", ephemeral: true });
 
     const money = Math.floor(Math.random() * 200) + 50;
     db.set(user, db.get(user) + money);
     cooldowns.set(user, now);
 
-    return interaction.reply(`💼 Ganaste ${money}`);
+    return i.reply(`💼 Ganaste ${money}`);
   }
 
-  if (interaction.commandName === "balance") {
-    return interaction.reply(`💰 ${db.get(user)} coins`);
+  if (i.commandName === "balance") {
+    return i.reply(`💰 ${db.get(user)} coins`);
   }
 
-  if (interaction.commandName === "daily") {
+  if (i.commandName === "daily") {
     db.set(user, db.get(user) + 500);
-    return interaction.reply("🎁 +500 coins");
+    return i.reply("🎁 +500 coins");
   }
 
-  if (interaction.commandName === "shop") {
-    return interaction.reply("🛒 VRChat+ = 20000 coins");
+  if (i.commandName === "shop") {
+    return i.reply("🛒 VRChat+ = 20000 coins");
   }
 
-  if (interaction.commandName === "buy") {
-    const item = interaction.options.getString("item");
+  if (i.commandName === "buy") {
+    if (db.get(user) < 20000)
+      return i.reply("❌ No tienes dinero");
 
-    if (item === "vrchat+") {
-      if (db.get(user) < 20000)
-        return interaction.reply("❌ No tienes dinero");
-
-      db.set(user, db.get(user) - 20000);
-      return interaction.reply("✅ Compraste VRChat+");
-    }
+    db.set(user, db.get(user) - 20000);
+    return i.reply("✅ Compraste VRChat+");
   }
 });
 
-// ================= SETUP =================
+// ================= SETUP LIMPIO =================
 client.on("messageCreate", async msg => {
   if (msg.content !== "!setup") return;
 
   const g = msg.guild;
+  await msg.reply("⚙️ Reiniciando servidor...");
+
+  // BORRAR CANALES
+  for (const ch of g.channels.cache.values()) {
+    try { await ch.delete(); } catch {}
+  }
+
+  // BORRAR ROLES
+  for (const r of g.roles.cache.values()) {
+    if (r.name === "@everyone") continue;
+    try { await r.delete(); } catch {}
+  }
 
   // ROLES
-  const owner = await g.roles.create({ name: "👑 Owner" });
+  const owner = await g.roles.create({ name: "👑 Owner", permissions: ["Administrator"] });
   const admin = await g.roles.create({ name: "🔥 Admin" });
   const mod = await g.roles.create({ name: "🛠 Mod" });
   const member = await g.roles.create({ name: "👤 Miembro" });
 
   await msg.member.roles.add(owner);
 
-  // CATEGORIAS
+  // CATEGORÍAS
   const info = await g.channels.create({ name: "📌 INFO", type: ChannelType.GuildCategory });
   const general = await g.channels.create({ name: "💬 GENERAL", type: ChannelType.GuildCategory });
   const media = await g.channels.create({ name: "📸 MEDIA", type: ChannelType.GuildCategory });
   const games = await g.channels.create({ name: "🎮 JUEGOS", type: ChannelType.GuildCategory });
-  const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
   const ticketsCat = await g.channels.create({ name: "🎟️ TICKETS", type: ChannelType.GuildCategory });
+  const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
 
   // CANALES
   await g.channels.create({ name: "📢・bienvenida", parent: info.id });
@@ -136,22 +141,19 @@ client.on("messageCreate", async msg => {
   await g.channels.create({ name: "💬・general", parent: general.id });
   await g.channels.create({ name: "💰・economia", parent: general.id });
   await g.channels.create({ name: "😂・memes", parent: general.id });
-  await g.channels.create({ name: "🎉・eventos", parent: general.id });
 
   await g.channels.create({ name: "📸・fotos", parent: media.id });
-  await g.channels.create({ name: "🎬・clips", parent: media.id });
 
-  await g.channels.create({ name: "🔫・valorant", parent: games.id });
-  await g.channels.create({ name: "⛏️・minecraft", parent: games.id });
   await g.channels.create({ name: "🌌・vrchat", parent: games.id });
 
   // STAFF PRIVADO
-  const staffLogs = await g.channels.create({
+  await g.channels.create({
     name: "📜・staff-logs",
     parent: staff.id,
     permissionOverwrites: [
       { id: g.roles.everyone, deny: ["ViewChannel"] },
-      { id: msg.member.id, allow: ["ViewChannel"] }
+      { id: owner.id, allow: ["ViewChannel"] },
+      { id: admin.id, allow: ["ViewChannel"] }
     ]
   });
 
@@ -160,20 +162,11 @@ client.on("messageCreate", async msg => {
     parent: staff.id,
     permissionOverwrites: [
       { id: g.roles.everyone, deny: ["ViewChannel"] },
-      { id: msg.member.id, allow: ["ViewChannel"] }
+      { id: owner.id, allow: ["ViewChannel"] }
     ]
   });
 
-  await g.channels.create({
-    name: "📁・tickets-cerrados",
-    parent: staff.id,
-    permissionOverwrites: [
-      { id: g.roles.everyone, deny: ["ViewChannel"] },
-      { id: msg.member.id, allow: ["ViewChannel"] }
-    ]
-  });
-
-  // PANEL TICKETS
+  // TICKETS
   const ticketPanel = await g.channels.create({
     name: "🎫・crear-ticket",
     parent: ticketsCat.id
@@ -192,36 +185,25 @@ client.on("messageCreate", async msg => {
 
   await ticketPanel.send({ embeds: [embed], components: [row] });
 
-  msg.reply("🔥 Setup completo");
+  msg.channel.send("🔥 Setup listo");
 });
 
 // ================= TICKETS =================
-client.on("interactionCreate", async interaction => {
-  if (!interaction.isButton()) return;
+client.on("interactionCreate", async i => {
+  if (!i.isButton()) return;
 
-  if (interaction.customId === "ticket") {
-    const ch = await interaction.guild.channels.create({
-      name: `ticket-${interaction.user.username}`,
+  if (i.customId === "ticket") {
+    const ch = await i.guild.channels.create({
+      name: `ticket-${i.user.username}`,
       type: ChannelType.GuildText,
       permissionOverwrites: [
-        { id: interaction.guild.roles.everyone, deny: ["ViewChannel"] },
-        { id: interaction.user.id, allow: ["ViewChannel"] }
+        { id: i.guild.roles.everyone, deny: ["ViewChannel"] },
+        { id: i.user.id, allow: ["ViewChannel"] }
       ]
     });
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("close")
-        .setLabel("Cerrar")
-        .setStyle(ButtonStyle.Danger)
-    );
-
-    ch.send({ content: "🎟 Ticket creado", components: [row] });
-    interaction.reply({ content: "✅ Ticket creado", ephemeral: true });
-  }
-
-  if (interaction.customId === "close") {
-    await interaction.channel.delete();
+    ch.send("🎟 Ticket creado");
+    i.reply({ content: "✅ Ticket creado", ephemeral: true });
   }
 });
 
@@ -229,6 +211,29 @@ client.on("interactionCreate", async interaction => {
 client.on("guildMemberAdd", member => {
   const role = member.guild.roles.cache.find(r => r.name.includes("Miembro"));
   if (role) member.roles.add(role);
+});
+
+// ================= LOGS MODO DIOS =================
+function logs(guild) {
+  return guild.channels.cache.find(c => c.name === "📜・staff-logs");
+}
+
+client.on("messageDelete", async m => {
+  if (!m.guild || m.author?.bot) return;
+  logs(m.guild)?.send(`🗑️ ${m.author.tag}: ${m.content}`);
+});
+
+client.on("messageUpdate", (o, n) => {
+  if (!o.guild || o.author?.bot) return;
+  logs(o.guild)?.send(`✏️ ${o.author.tag}: ${o.content} → ${n.content}`);
+});
+
+client.on("guildMemberAdd", m => {
+  logs(m.guild)?.send(`📥 ${m.user.tag} entró`);
+});
+
+client.on("guildMemberRemove", m => {
+  logs(m.guild)?.send(`📤 ${m.user.tag} salió`);
 });
 
 // ================= LOGIN =================
