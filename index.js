@@ -24,6 +24,39 @@ const {
   SlashCommandBuilder
 } = require("discord.js");
 
+// ================= DATABASE =================
+const sqlite3 = require("sqlite3").verbose();
+const database = new sqlite3.Database("./economy.db");
+
+database.run(`
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  coins INTEGER DEFAULT 0
+)
+`);
+
+function getCoins(id) {
+  return new Promise((resolve) => {
+    database.get("SELECT coins FROM users WHERE id = ?", [id], (err, row) => {
+      if (!row) {
+        database.run("INSERT INTO users (id, coins) VALUES (?, 0)", [id]);
+        return resolve(0);
+      }
+      resolve(row.coins);
+    });
+  });
+}
+
+function addCoins(id, amount) {
+  database.run(`
+    INSERT INTO users (id, coins)
+    VALUES (?, ?)
+    ON CONFLICT(id)
+    DO UPDATE SET coins = coins + ?
+  `, [id, amount, amount]);
+}
+
+// ================= BOT =================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -33,8 +66,6 @@ const client = new Client({
   ]
 });
 
-// ================= ECONOMIA =================
-const db = new Map();
 const cooldowns = new Map();
 
 // ================= READY =================
@@ -57,7 +88,7 @@ client.once("ready", async () => {
   await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
 });
 
-// ================= FUNCION =================
+// ================= FUNC =================
 function getChannel(guild, name) {
   return guild.channels.cache.find(c => c.name === name);
 }
@@ -67,10 +98,10 @@ client.on("interactionCreate", async i => {
   if (!i.isChatInputCommand() && !i.isButton()) return;
 
   const user = i.user.id;
-  if (!db.has(user)) db.set(user, 0);
 
   // ECONOMIA
   if (i.isChatInputCommand()) {
+
     if (i.commandName === "work") {
       const now = Date.now();
       const last = cooldowns.get(user) || 0;
@@ -79,19 +110,21 @@ client.on("interactionCreate", async i => {
         return i.reply({ content: "⏳ Espera 30 min", ephemeral: true });
 
       const money = Math.floor(Math.random() * 200) + 50;
-      db.set(user, db.get(user) + money);
+
+      addCoins(user, money);
       cooldowns.set(user, now);
 
       return i.reply(`💼 Ganaste ${money}`);
     }
 
     if (i.commandName === "balance") {
-      return i.reply(`💰 ${db.get(user)} coins`);
+      const coins = await getCoins(user);
+      return i.reply(`💰 ${coins} coins`);
     }
 
     if (i.commandName === "daily") {
-      db.set(user, db.get(user) + 100);
-      return i.reply("🎁 +100 coins");
+      addCoins(user, 500);
+      return i.reply("🎁 +500 coins");
     }
 
     if (i.commandName === "shop") {
@@ -99,15 +132,17 @@ client.on("interactionCreate", async i => {
     }
 
     if (i.commandName === "buy") {
-      if (db.get(user) < 20000)
+      const coins = await getCoins(user);
+
+      if (coins < 20000)
         return i.reply("❌ No tienes dinero");
 
-      db.set(user, db.get(user) - 20000);
+      addCoins(user, -20000);
       return i.reply("✅ Compraste VRChat+");
     }
   }
 
-  // TICKET
+  // TICKETS
   if (i.isButton() && i.customId === "ticket") {
     const ch = await i.guild.channels.create({
       name: `ticket-${i.user.username}`,
@@ -130,7 +165,6 @@ client.on("messageCreate", async msg => {
   const g = msg.guild;
   await msg.reply("⚙️ Configurando servidor PRO...");
 
-  // LIMPIAR
   for (const ch of g.channels.cache.values()) {
     try { await ch.delete(); } catch {}
   }
@@ -140,7 +174,6 @@ client.on("messageCreate", async msg => {
     try { await r.delete(); } catch {}
   }
 
-  // ROLES
   const owner = await g.roles.create({ name: "👑 Owner", permissions: ["Administrator"] });
   const admin = await g.roles.create({ name: "🔥 Admin" });
   const mod = await g.roles.create({ name: "🛠 Mod" });
@@ -148,7 +181,6 @@ client.on("messageCreate", async msg => {
 
   await msg.member.roles.add(owner);
 
-  // CATEGORIAS
   const info = await g.channels.create({ name: "📌 INFO", type: ChannelType.GuildCategory });
   const general = await g.channels.create({ name: "💬 GENERAL", type: ChannelType.GuildCategory });
   const media = await g.channels.create({ name: "📸 MEDIA", type: ChannelType.GuildCategory });
@@ -156,7 +188,6 @@ client.on("messageCreate", async msg => {
   const ticketsCat = await g.channels.create({ name: "🎟️ TICKETS", type: ChannelType.GuildCategory });
   const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
 
-  // FUNCION CREAR CANAL
   async function createChannel(name, parent, text) {
     const ch = await g.channels.create({ name, parent });
 
@@ -169,46 +200,16 @@ client.on("messageCreate", async msg => {
     }
   }
 
-  // INFO
-  await createChannel("📢・bienvenida", info.id, "🌙 Bienvenido a Lunaris. Lee las reglas.");
-  await createChannel("📣・anuncios", info.id, "📢 Solo anuncios oficiales.");
-
-  // GENERAL
-  await createChannel("💬・general", general.id, "💬 Chat principal del servidor.");
+  await createChannel("📢・bienvenida", info.id, "🌙 Bienvenido a Lunaris.");
+  await createChannel("💬・general", general.id, "💬 Chat principal.");
   await createChannel("💰・economia", general.id, "💰 Usa /work /shop.");
-  await createChannel("😂・memes", general.id, "😂 Comparte memes.");
-  await createChannel("🎉・eventos", general.id, "🎉 Eventos.");
-
-  // MEDIA
   await createChannel("📸・fotos", media.id, "📸 Comparte fotos.");
-  await createChannel("🎬・clips", media.id, "🎬 Clips.");
-  await createChannel("🎨・arte", media.id, "🎨 Arte.");
-  await createChannel("📱・selfies", media.id, "📱 Selfies.");
-
-  // JUEGOS
   await createChannel("🎮・general-gaming", games.id, "🎮 Gaming.");
-  await createChannel("🔫・valorant", games.id, "🔫 Valorant.");
-  await createChannel("⛏️・minecraft", games.id, "⛏️ Minecraft.");
-  await createChannel("🌌・vrchat", games.id, "🌌 VRChat.");
-  await createChannel("🕹️・otros-juegos", games.id, "🕹️ Otros juegos.");
 
-  // VOICE
   await g.channels.create({ name: "🔊 General", type: ChannelType.GuildVoice, parent: general.id });
-  await g.channels.create({ name: "🎮 Gaming", type: ChannelType.GuildVoice, parent: games.id });
 
-  // STAFF
   await g.channels.create({
     name: "📜・staff-logs",
-    parent: staff.id,
-    permissionOverwrites: [
-      { id: g.roles.everyone, deny: ["ViewChannel"] },
-      { id: owner.id, allow: ["ViewChannel"] },
-      { id: admin.id, allow: ["ViewChannel"] }
-    ]
-  });
-
-  await g.channels.create({
-    name: "💬・staff-chat",
     parent: staff.id,
     permissionOverwrites: [
       { id: g.roles.everyone, deny: ["ViewChannel"] },
@@ -216,32 +217,12 @@ client.on("messageCreate", async msg => {
     ]
   });
 
-  // TICKETS
-  const ticketPanel = await g.channels.create({
-    name: "🎫・crear-ticket",
-    parent: ticketsCat.id
-  });
-
-  const embed = new EmbedBuilder()
-    .setTitle("🎟️ Tickets")
-    .setDescription("Presiona para abrir ticket");
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("ticket")
-      .setLabel("Crear Ticket")
-      .setStyle(ButtonStyle.Primary)
-  );
-
-  await ticketPanel.send({ embeds: [embed], components: [row] });
-
   msg.channel.send("🔥 SETUP COMPLETO");
 });
 
 // ================= BIENVENIDA =================
 client.on("guildMemberAdd", async member => {
   const welcome = getChannel(member.guild, "📢・bienvenida");
-  const logs = getChannel(member.guild, "📜・staff-logs");
 
   const role = member.guild.roles.cache.find(r => r.name.includes("Miembro"));
   if (role) member.roles.add(role);
@@ -249,120 +230,25 @@ client.on("guildMemberAdd", async member => {
   if (welcome) {
     const embed = new EmbedBuilder()
       .setColor("#7a00ff")
-      .setTitle("🌙 Bienvenido a Lunaris")
-      .setDescription(`✨ ${member.user} ha llegado al servidor`)
-      .setThumbnail(member.user.displayAvatarURL())
-      .setTimestamp();
+      .setTitle("🌙 Bienvenido")
+      .setDescription(`${member.user} se unió`);
 
     welcome.send({ embeds: [embed], flags: 4096 });
   }
-
-  logs?.send(`📥 ${member.user.tag} entró`);
 });
 
-// ================= LOGS PRO =================
-
-// 🗑️ DELETE
+// ================= LOGS =================
 client.on("messageDelete", async m => {
   if (!m.guild || m.author?.bot) return;
 
   const logs = getChannel(m.guild, "📜・staff-logs");
-  if (!logs) return;
 
   const embed = new EmbedBuilder()
-    .setColor("#ff4d4d")
-    .setAuthor({ name: m.author.tag, iconURL: m.author.displayAvatarURL() })
+    .setColor("Red")
     .setTitle("🗑️ Mensaje eliminado")
-    .addFields(
-      { name: "📍 Canal", value: `#${m.channel.name}`, inline: true },
-      { name: "📝 Contenido", value: m.content || "*Vacío*" }
-    )
-    .setFooter({ text: `ID: ${m.author.id}` })
-    .setTimestamp();
-
-  logs.send({ embeds: [embed] });
-});
-
-// ✏️ EDIT
-client.on("messageUpdate", async (o, n) => {
-  if (!o.guild || o.author?.bot) return;
-  if (o.content === n.content) return;
-
-  const logs = getChannel(o.guild, "📜・staff-logs");
-  if (!logs) return;
-
-  const embed = new EmbedBuilder()
-    .setColor("#ffaa00")
-    .setAuthor({ name: o.author.tag, iconURL: o.author.displayAvatarURL() })
-    .setTitle("✏️ Mensaje editado")
-    .addFields(
-      { name: "📍 Canal", value: `#${o.channel.name}` },
-      { name: "Antes", value: o.content || "*Vacío*" },
-      { name: "Después", value: n.content || "*Vacío*" }
-    )
-    .setTimestamp();
-
-  logs.send({ embeds: [embed] });
-});
-
-// 👢 KICK / LEAVE
-client.on("guildMemberRemove", async member => {
-  const logs = getChannel(member.guild, "📜・staff-logs");
-  if (!logs) return;
-
-  const fetched = await member.guild.fetchAuditLogs({
-    limit: 1,
-    type: 20
-  });
-
-  const entry = fetched.entries.first();
-
-  const embed = new EmbedBuilder()
-    .setColor("#ff8800")
-    .setThumbnail(member.user.displayAvatarURL())
-    .setTimestamp();
-
-  if (entry && entry.target.id === member.id) {
-    embed
-      .setTitle("👢 Usuario expulsado")
-      .setDescription(`👤 ${member.user.tag}`);
-  } else {
-    embed
-      .setTitle("📤 Usuario salió")
-      .setDescription(`👤 ${member.user.tag}`);
-  }
-
-  logs.send({ embeds: [embed] });
-});
-
-// 🔨 BAN
-client.on("guildBanAdd", async ban => {
-  const logs = getChannel(ban.guild, "📜・staff-logs");
-  if (!logs) return;
-
-  const embed = new EmbedBuilder()
-    .setColor("#ff0000")
-    .setTitle("🔨 Usuario baneado")
-    .setDescription(`👤 ${ban.user.tag}`)
-    .setThumbnail(ban.user.displayAvatarURL())
-    .setTimestamp();
-
-  logs.send({ embeds: [embed] });
-});
-
-// 📥 JOIN
-client.on("guildMemberAdd", member => {
-  const logs = getChannel(member.guild, "📜・staff-logs");
-
-  const embed = new EmbedBuilder()
-    .setColor("#00ffcc")
-    .setTitle("📥 Nuevo miembro")
-    .setDescription(`👤 ${member.user.tag}`)
-    .setThumbnail(member.user.displayAvatarURL())
-    .setTimestamp();
+    .setDescription(`${m.author.tag}: ${m.content}`);
 
   logs?.send({ embeds: [embed] });
 });
 
-// ================= LOGIN =================
 client.login(process.env.TOKEN);
