@@ -260,24 +260,108 @@ client.on("guildMemberAdd", async member => {
   logs?.send(`📥 ${member.user.tag} entró`);
 });
 
-// ================= LOGS =================
+// ================= LOGS PRO =================
+
+// 🗑️ DELETE
 client.on("messageDelete", async m => {
   if (!m.guild || m.author?.bot) return;
-  getChannel(m.guild, "📜・staff-logs")?.send(`🗑 ${m.author.tag}: ${m.content}`);
+
+  const logs = getChannel(m.guild, "📜・staff-logs");
+  if (!logs) return;
+
+  const embed = new EmbedBuilder()
+    .setColor("#ff4d4d")
+    .setAuthor({ name: m.author.tag, iconURL: m.author.displayAvatarURL() })
+    .setTitle("🗑️ Mensaje eliminado")
+    .addFields(
+      { name: "📍 Canal", value: `#${m.channel.name}`, inline: true },
+      { name: "📝 Contenido", value: m.content || "*Vacío*" }
+    )
+    .setFooter({ text: `ID: ${m.author.id}` })
+    .setTimestamp();
+
+  logs.send({ embeds: [embed] });
 });
 
+// ✏️ EDIT
 client.on("messageUpdate", async (o, n) => {
   if (!o.guild || o.author?.bot) return;
   if (o.content === n.content) return;
-  getChannel(o.guild, "📜・staff-logs")?.send(`✏️ ${o.author.tag}`);
+
+  const logs = getChannel(o.guild, "📜・staff-logs");
+  if (!logs) return;
+
+  const embed = new EmbedBuilder()
+    .setColor("#ffaa00")
+    .setAuthor({ name: o.author.tag, iconURL: o.author.displayAvatarURL() })
+    .setTitle("✏️ Mensaje editado")
+    .addFields(
+      { name: "📍 Canal", value: `#${o.channel.name}` },
+      { name: "Antes", value: o.content || "*Vacío*" },
+      { name: "Después", value: n.content || "*Vacío*" }
+    )
+    .setTimestamp();
+
+  logs.send({ embeds: [embed] });
 });
 
+// 👢 KICK / LEAVE
+client.on("guildMemberRemove", async member => {
+  const logs = getChannel(member.guild, "📜・staff-logs");
+  if (!logs) return;
+
+  const fetched = await member.guild.fetchAuditLogs({
+    limit: 1,
+    type: 20
+  });
+
+  const entry = fetched.entries.first();
+
+  const embed = new EmbedBuilder()
+    .setColor("#ff8800")
+    .setThumbnail(member.user.displayAvatarURL())
+    .setTimestamp();
+
+  if (entry && entry.target.id === member.id) {
+    embed
+      .setTitle("👢 Usuario expulsado")
+      .setDescription(`👤 ${member.user.tag}`);
+  } else {
+    embed
+      .setTitle("📤 Usuario salió")
+      .setDescription(`👤 ${member.user.tag}`);
+  }
+
+  logs.send({ embeds: [embed] });
+});
+
+// 🔨 BAN
 client.on("guildBanAdd", async ban => {
-  getChannel(ban.guild, "📜・staff-logs")?.send(`🔨 ${ban.user.tag} baneado`);
+  const logs = getChannel(ban.guild, "📜・staff-logs");
+  if (!logs) return;
+
+  const embed = new EmbedBuilder()
+    .setColor("#ff0000")
+    .setTitle("🔨 Usuario baneado")
+    .setDescription(`👤 ${ban.user.tag}`)
+    .setThumbnail(ban.user.displayAvatarURL())
+    .setTimestamp();
+
+  logs.send({ embeds: [embed] });
 });
 
-client.on("guildMemberRemove", m => {
-  getChannel(m.guild, "📜・staff-logs")?.send(`📤 ${m.user.tag} salió`);
+// 📥 JOIN
+client.on("guildMemberAdd", member => {
+  const logs = getChannel(member.guild, "📜・staff-logs");
+
+  const embed = new EmbedBuilder()
+    .setColor("#00ffcc")
+    .setTitle("📥 Nuevo miembro")
+    .setDescription(`👤 ${member.user.tag}`)
+    .setThumbnail(member.user.displayAvatarURL())
+    .setTimestamp();
+
+  logs?.send({ embeds: [embed] });
 });
 
 // ================= LOGIN =================
