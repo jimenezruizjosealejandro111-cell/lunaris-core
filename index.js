@@ -76,22 +76,11 @@ client.once("ready", async () => {
     new SlashCommandBuilder().setName("work").setDescription("Trabajar"),
     new SlashCommandBuilder().setName("balance").setDescription("Ver dinero"),
     new SlashCommandBuilder().setName("daily").setDescription("Recompensa diaria"),
-    new SlashCommandBuilder().setName("shop").setDescription("Tienda"),
-    new SlashCommandBuilder()
-      .setName("buy")
-      .setDescription("Comprar")
-      .addStringOption(o =>
-        o.setName("item").setDescription("Item").setRequired(true))
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
   await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
 });
-
-// ================= FUNC =================
-function getChannel(guild, name) {
-  return guild.channels.cache.find(c => c.name === name);
-}
 
 // ================= SLASH =================
 client.on("interactionCreate", async i => {
@@ -99,7 +88,6 @@ client.on("interactionCreate", async i => {
 
   const user = i.user.id;
 
-  // ECONOMIA
   if (i.isChatInputCommand()) {
 
     if (i.commandName === "work") {
@@ -110,7 +98,6 @@ client.on("interactionCreate", async i => {
         return i.reply({ content: "⏳ Espera 30 min", ephemeral: true });
 
       const money = Math.floor(Math.random() * 200) + 50;
-
       addCoins(user, money);
       cooldowns.set(user, now);
 
@@ -125,20 +112,6 @@ client.on("interactionCreate", async i => {
     if (i.commandName === "daily") {
       addCoins(user, 500);
       return i.reply("🎁 +500 coins");
-    }
-
-    if (i.commandName === "shop") {
-      return i.reply("🛒 VRChat+ = 20000 coins");
-    }
-
-    if (i.commandName === "buy") {
-      const coins = await getCoins(user);
-
-      if (coins < 20000)
-        return i.reply("❌ No tienes dinero");
-
-      addCoins(user, -20000);
-      return i.reply("✅ Compraste VRChat+");
     }
   }
 
@@ -163,8 +136,9 @@ client.on("messageCreate", async msg => {
   if (msg.content !== "!setup") return;
 
   const g = msg.guild;
-  await msg.reply("⚙️ Configurando servidor PRO...");
+  await msg.reply("⚙️ Configurando servidor...");
 
+  // LIMPIAR
   for (const ch of g.channels.cache.values()) {
     try { await ch.delete(); } catch {}
   }
@@ -174,6 +148,7 @@ client.on("messageCreate", async msg => {
     try { await r.delete(); } catch {}
   }
 
+  // ROLES
   const owner = await g.roles.create({ name: "👑 Owner", permissions: ["Administrator"] });
   const admin = await g.roles.create({ name: "🔥 Admin" });
   const mod = await g.roles.create({ name: "🛠 Mod" });
@@ -181,30 +156,25 @@ client.on("messageCreate", async msg => {
 
   await msg.member.roles.add(owner);
 
+  // CATEGORIAS
   const info = await g.channels.create({ name: "📌 INFO", type: ChannelType.GuildCategory });
   const general = await g.channels.create({ name: "💬 GENERAL", type: ChannelType.GuildCategory });
   const media = await g.channels.create({ name: "📸 MEDIA", type: ChannelType.GuildCategory });
   const games = await g.channels.create({ name: "🎮 JUEGOS", type: ChannelType.GuildCategory });
-  const ticketsCat = await g.channels.create({ name: "🎟️ TICKETS", type: ChannelType.GuildCategory });
   const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
 
-  async function createChannel(name, parent, text) {
-    const ch = await g.channels.create({ name, parent });
-
-    if (text) {
-      const embed = new EmbedBuilder()
-        .setColor("#2b2d31")
-        .setDescription(text);
-
-      ch.send({ embeds: [embed], flags: 4096 });
-    }
+  // CANALES
+  async function ch(name, parent, text) {
+    const c = await g.channels.create({ name, parent });
+    const embed = new EmbedBuilder().setDescription(text).setColor("#2b2d31");
+    c.send({ embeds: [embed] }); // 🔊 ahora sí notifica
   }
 
-  await createChannel("📢・bienvenida", info.id, "🌙 Bienvenido a Lunaris.");
-  await createChannel("💬・general", general.id, "💬 Chat principal.");
-  await createChannel("💰・economia", general.id, "💰 Usa /work /shop.");
-  await createChannel("📸・fotos", media.id, "📸 Comparte fotos.");
-  await createChannel("🎮・general-gaming", games.id, "🎮 Gaming.");
+  await ch("📢・bienvenida", info.id, "🌙 Bienvenido a Lunaris");
+  await ch("💬・general", general.id, "💬 Chat principal");
+  await ch("💰・economia", general.id, "💰 Usa /work /balance");
+  await ch("📸・fotos", media.id, "📸 Comparte fotos");
+  await ch("🎮・general-gaming", games.id, "🎮 Gaming");
 
   await g.channels.create({ name: "🔊 General", type: ChannelType.GuildVoice, parent: general.id });
 
@@ -220,33 +190,44 @@ client.on("messageCreate", async msg => {
   msg.channel.send("🔥 SETUP COMPLETO");
 });
 
-// ================= BIENVENIDA =================
+// ================= BIENVENIDA + LOG =================
 client.on("guildMemberAdd", async member => {
-  const welcome = getChannel(member.guild, "📢・bienvenida");
+  const welcome = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
+  const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
 
   const role = member.guild.roles.cache.find(r => r.name.includes("Miembro"));
   if (role) member.roles.add(role);
 
-  if (welcome) {
-    const embed = new EmbedBuilder()
-      .setColor("#7a00ff")
-      .setTitle("🌙 Bienvenido")
-      .setDescription(`${member.user} se unió`);
+  const embed = new EmbedBuilder()
+    .setColor("#7a00ff")
+    .setTitle("🌙 Bienvenido a Lunaris")
+    .setDescription(`✨ ${member.user} ha llegado`)
+    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+    .setImage("https://i.imgur.com/8Km9tLL.png")
+    .setTimestamp();
 
-    welcome.send({ embeds: [embed], flags: 4096 });
-  }
+  welcome?.send({ embeds: [embed] });
+
+  const logEmbed = new EmbedBuilder()
+    .setColor("Green")
+    .setTitle("📥 Usuario entró")
+    .setDescription(`${member.user.tag}`)
+    .setTimestamp();
+
+  logs?.send({ embeds: [logEmbed] });
 });
 
-// ================= LOGS =================
+// ================= LOG MENSAJES =================
 client.on("messageDelete", async m => {
   if (!m.guild || m.author?.bot) return;
 
-  const logs = getChannel(m.guild, "📜・staff-logs");
+  const logs = m.guild.channels.cache.find(c => c.name.includes("staff-logs"));
 
   const embed = new EmbedBuilder()
     .setColor("Red")
     .setTitle("🗑️ Mensaje eliminado")
-    .setDescription(`${m.author.tag}: ${m.content}`);
+    .setDescription(`${m.author.tag}: ${m.content || "Sin texto"}`)
+    .setTimestamp();
 
   logs?.send({ embeds: [embed] });
 });
