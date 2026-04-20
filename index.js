@@ -80,9 +80,7 @@ client.once("ready", async () => {
 // ================= INTERACTIONS =================
 client.on("interactionCreate", async i => {
 
-  // ===== ECONOMÍA =====
   if (i.isChatInputCommand()) {
-
     const user = i.user.id;
 
     if (i.commandName === "work") {
@@ -110,7 +108,7 @@ client.on("interactionCreate", async i => {
     }
   }
 
-  // ===== PANEL BOTÓN =====
+  // PANEL ANUNCIOS PRO
   if (i.isButton() && i.customId === "crear_anuncio") {
 
     if (!i.member.permissions.has(PermissionsBitField.Flags.Administrator))
@@ -145,7 +143,6 @@ client.on("interactionCreate", async i => {
     await i.showModal(modal);
   }
 
-  // ===== MODAL =====
   if (i.isModalSubmit() && i.customId === "modal_anuncio_pro") {
 
     const titulo = i.fields.getTextInputValue("titulo");
@@ -172,7 +169,7 @@ client.on("interactionCreate", async i => {
   }
 });
 
-// ================= PANEL COMANDO =================
+// ================= PANEL =================
 client.on("messageCreate", async msg => {
 
   if (msg.content === "!panel-anuncios") {
@@ -194,54 +191,9 @@ client.on("messageCreate", async msg => {
 
     msg.channel.send({ embeds: [embed], components: [row] });
   }
-
-  // ===== SETUP =====
-  if (msg.content === "!setup") {
-
-    const g = msg.guild;
-
-    await msg.reply("⚙️ Configurando servidor...");
-
-    for (const ch of g.channels.cache.values()) {
-      try { await ch.delete(); } catch {}
-    }
-
-    for (const r of g.roles.cache.values()) {
-      if (r.name !== "@everyone") {
-        try { await r.delete(); } catch {}
-      }
-    }
-
-    const owner = await g.roles.create({
-      name: "👑 Owner",
-      permissions: [PermissionsBitField.Flags.Administrator]
-    });
-
-    const member = await g.roles.create({ name: "👤 Miembro" });
-
-    await msg.member.roles.add(owner);
-
-    const info = await g.channels.create({ name: "📌 INFO", type: ChannelType.GuildCategory });
-    const general = await g.channels.create({ name: "💬 GENERAL", type: ChannelType.GuildCategory });
-    const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
-
-    await g.channels.create({ name: "📢・bienvenida", parent: info.id });
-    await g.channels.create({ name: "📢・anuncios", parent: info.id });
-
-    await g.channels.create({
-      name: "📜・staff-logs",
-      parent: staff.id,
-      permissionOverwrites: [
-        { id: g.roles.everyone, deny: ["ViewChannel"] },
-        { id: owner.id, allow: ["ViewChannel"] }
-      ]
-    });
-
-    msg.channel.send("🔥 SETUP COMPLETO");
-  }
 });
 
-// ================= BIENVENIDA =================
+// ================= BIENVENIDA ANIMADA =================
 client.on("guildMemberAdd", async member => {
 
   const welcome = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
@@ -250,24 +202,24 @@ client.on("guildMemberAdd", async member => {
   const role = member.guild.roles.cache.find(r => r.name.includes("Miembro"));
   if (role) member.roles.add(role);
 
+  const imageURL = `https://api.popcat.xyz/welcomecard?background=https://cdn.discordapp.com/attachments/1495637775716978688/1495812926047518740/diana-y-leona.png&text1=${encodeURIComponent(member.user.username)}&text2=Bienvenido&text3=${member.guild.name}&avatar=${member.user.displayAvatarURL({ extension: "png" })}`;
+
   const embed = new EmbedBuilder()
-    .setColor("#2b2d31")
-    .setAuthor({
-      name: `Bienvenido a ${member.guild.name}`,
-      iconURL: member.guild.iconURL()
-    })
-    .setDescription(`✨ ${member} se unió al servidor`)
-    .setThumbnail(member.user.displayAvatarURL())
-    .setImage("https://i.imgur.com/8Km9tLL.png")
+    .setColor("#7a00ff")
+    .setTitle("🌙 Bienvenido a Lunaris")
+    .setImage(imageURL)
     .setTimestamp();
 
-  welcome?.send({ content: `👋 ${member}`, embeds: [embed] });
+  welcome?.send({
+    content: `👋 Bienvenido ${member}`,
+    embeds: [embed]
+  });
 
   logs?.send({
     embeds: [
       new EmbedBuilder()
         .setColor("Green")
-        .setTitle("📥 Member Joined")
+        .setTitle("📥 Usuario entró")
         .setDescription(member.user.tag)
     ]
   });
@@ -285,19 +237,6 @@ client.on("messageDelete", async m => {
         .setColor("Red")
         .setTitle("🗑️ Mensaje eliminado")
         .setDescription(`${m.author.tag}: ${m.content || "Sin texto"}`)
-    ]
-  });
-});
-
-client.on("guildMemberRemove", async member => {
-  const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
-
-  logs?.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("Orange")
-        .setTitle("📤 Member Left")
-        .setDescription(member.user.tag)
     ]
   });
 });
