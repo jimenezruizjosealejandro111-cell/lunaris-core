@@ -25,9 +25,6 @@ const {
   PermissionsBitField
 } = require("discord.js");
 
-// ================= CANVAS =================
-const { createCanvas, loadImage } = require("canvas");
-
 // ================= DATABASE =================
 const sqlite3 = require("sqlite3").verbose();
 const db = new sqlite3.Database("./economy.db");
@@ -142,9 +139,11 @@ client.on("interactionCreate", async i => {
       content: "@everyone",
       embeds: [
         new EmbedBuilder()
-          .setColor("#7a00ff")
-          .setTitle(i.fields.getTextInputValue("titulo"))
+          .setColor("#8b5cf6")
+          .setTitle(`📢 ${i.fields.getTextInputValue("titulo")}`)
           .setDescription(i.fields.getTextInputValue("mensaje"))
+          .setFooter({ text: `Lunaris • ${i.user.tag}` })
+          .setTimestamp()
       ]
     });
 
@@ -165,7 +164,12 @@ client.on("messageCreate", async msg => {
     );
 
     msg.channel.send({
-      embeds: [new EmbedBuilder().setTitle("Panel de anuncios")],
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#8b5cf6")
+          .setTitle("📢 Panel de Anuncios")
+          .setDescription("Crea anuncios fácilmente con el botón")
+      ],
       components: [row]
     });
   }
@@ -174,8 +178,8 @@ client.on("messageCreate", async msg => {
 // ================= BIENVENIDA + ANTI RAID =================
 client.on("guildMemberAdd", async member => {
 
-  const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
   const welcome = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
+  const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
 
   // ANTI RAID
   const now = Date.now();
@@ -192,7 +196,12 @@ client.on("guildMemberAdd", async member => {
     antiRaidActive = true;
 
     logs?.send({
-      embeds: [new EmbedBuilder().setColor("Red").setTitle("🚨 ANTI RAID")]
+      embeds: [
+        new EmbedBuilder()
+          .setColor("Red")
+          .setTitle("🚨 ANTI RAID ACTIVADO")
+          .setDescription("Entrada masiva detectada")
+      ]
     });
 
     setTimeout(() => antiRaidActive = false, 60000);
@@ -202,44 +211,36 @@ client.on("guildMemberAdd", async member => {
   const role = member.guild.roles.cache.find(r => r.name.includes("Miembro"));
   if (role) member.roles.add(role);
 
-  // CANVAS
-  const canvas = createCanvas(1024, 500);
-  const ctx = canvas.getContext("2d");
-
-  const background = await loadImage("https://cdn.discordapp.com/attachments/1495637775716978688/1495812926047518740/diana-y-leona.png");
-  ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = "rgba(0,0,0,0.5)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 50px sans-serif";
-  ctx.fillText("BIENVENIDO", 350, 150);
-
-  ctx.font = "40px sans-serif";
-  ctx.fillText(member.user.username, 350, 220);
-
-  const avatar = await loadImage(member.user.displayAvatarURL({ extension: "png" }));
-
-  ctx.beginPath();
-  ctx.arc(150, 250, 100, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.clip();
-
-  ctx.drawImage(avatar, 50, 150, 200, 200);
-
-  const attachment = {
-    files: [{ attachment: canvas.toBuffer(), name: "welcome.png" }]
-  };
+  // BIENVENIDA PRO
+  const embed = new EmbedBuilder()
+    .setColor("#8b5cf6")
+    .setAuthor({
+      name: `Bienvenido a ${member.guild.name}`,
+      iconURL: member.guild.iconURL()
+    })
+    .setTitle("🌙 Nuevo miembro")
+    .setDescription(`✨ ${member} se unió al servidor\n\n📌 Lee las reglas y disfruta tu estancia`)
+    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+    .setImage("https://cdn.discordapp.com/attachments/1495637775716978688/1495812926047518740/diana-y-leona.png")
+    .setFooter({ text: `ID: ${member.id}` })
+    .setTimestamp();
 
   welcome?.send({
-    content: `👋 ${member}`,
-    embeds: [new EmbedBuilder().setImage("attachment://welcome.png")],
-    files: attachment.files
+    content: `👋 Bienvenido ${member}`,
+    embeds: [embed],
+    allowedMentions: { parse: ["users"] }
   });
 
+  // LOG
   logs?.send({
-    embeds: [new EmbedBuilder().setColor("Green").setTitle("Usuario entró")]
+    embeds: [
+      new EmbedBuilder()
+        .setColor("Green")
+        .setTitle("📥 Usuario entró")
+        .setDescription(`👤 ${member.user.tag}\n🆔 ${member.id}`)
+        .setThumbnail(member.user.displayAvatarURL())
+        .setTimestamp()
+    ]
   });
 });
 
@@ -253,8 +254,9 @@ client.on("messageDelete", async m => {
     embeds: [
       new EmbedBuilder()
         .setColor("Red")
-        .setTitle("Mensaje eliminado")
-        .setDescription(m.content || "Sin texto")
+        .setTitle("🗑️ Mensaje eliminado")
+        .setDescription(`👤 ${m.author.tag}\n💬 ${m.content || "Sin texto"}`)
+        .setTimestamp()
     ]
   });
 });
