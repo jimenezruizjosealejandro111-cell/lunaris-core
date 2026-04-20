@@ -4,10 +4,7 @@ require("dotenv").config();
 const express = require("express");
 const app = express();
 
-app.get("/", (req, res) => {
-  res.send("🌙 Lunaris Core Online");
-});
-
+app.get("/", (req, res) => res.send("🌙 Lunaris Core Online"));
 app.listen(process.env.PORT || 3000, "0.0.0.0");
 
 // ================= DISCORD =================
@@ -18,7 +15,13 @@ const {
   ChannelType,
   REST,
   Routes,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require("discord.js");
 
 // ================= DATABASE =================
@@ -79,97 +82,149 @@ client.once("ready", async () => {
   await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
 });
 
-// ================= SLASH =================
+// ================= INTERACTIONS =================
 client.on("interactionCreate", async i => {
-  if (!i.isChatInputCommand()) return;
 
-  const user = i.user.id;
+  // ===== SLASH =====
+  if (i.isChatInputCommand()) {
 
-  if (i.commandName === "work") {
-    const now = Date.now();
-    const last = cooldowns.get(user) || 0;
+    const user = i.user.id;
 
-    if (now - last < 1800000)
-      return i.reply({ content: "⏳ Espera 30 min", ephemeral: true });
+    if (i.commandName === "work") {
+      const now = Date.now();
+      const last = cooldowns.get(user) || 0;
 
-    const money = Math.floor(Math.random() * 200) + 50;
-    addCoins(user, money);
-    cooldowns.set(user, now);
+      if (now - last < 1800000)
+        return i.reply({ content: "⏳ Espera 30 min", ephemeral: true });
 
-    return i.reply(`💼 Ganaste ${money}`);
+      const money = Math.floor(Math.random() * 200) + 50;
+      addCoins(user, money);
+      cooldowns.set(user, now);
+
+      return i.reply(`💼 Ganaste ${money}`);
+    }
+
+    if (i.commandName === "balance") {
+      const coins = await getCoins(user);
+      return i.reply(`💰 ${coins} coins`);
+    }
+
+    if (i.commandName === "daily") {
+      addCoins(user, 500);
+      return i.reply("🎁 +500 coins");
+    }
   }
 
-  if (i.commandName === "balance") {
-    const coins = await getCoins(user);
-    return i.reply(`💰 ${coins} coins`);
+  // ===== BOTÓN PANEL =====
+  if (i.isButton() && i.customId === "crear_anuncio") {
+
+    if (!i.member.permissions.has("Administrator"))
+      return i.reply({ content: "❌ No tienes permiso", ephemeral: true });
+
+    const modal = new ModalBuilder()
+      .setCustomId("modal_anuncio")
+      .setTitle("Crear anuncio");
+
+    const input = new TextInputBuilder()
+      .setCustomId("mensaje")
+      .setLabel("Escribe tu anuncio")
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true);
+
+    const row = new ActionRowBuilder().addComponents(input);
+    modal.addComponents(row);
+
+    await i.showModal(modal);
   }
 
-  if (i.commandName === "daily") {
-    addCoins(user, 500);
-    return i.reply("🎁 +500 coins");
+  // ===== MODAL =====
+  if (i.isModalSubmit() && i.customId === "modal_anuncio") {
+
+    const mensaje = i.fields.getTextInputValue("mensaje");
+
+    const canal = i.guild.channels.cache.find(c => c.name.includes("anuncios"));
+
+    const embed = new EmbedBuilder()
+      .setColor("#7a00ff")
+      .setTitle("📢 Anuncio")
+      .setDescription(mensaje)
+      .setFooter({ text: `Enviado por ${i.user.tag}` })
+      .setTimestamp();
+
+    canal?.send({ embeds: [embed] });
+
+    i.reply({ content: "✅ Anuncio enviado", ephemeral: true });
   }
 });
 
-// ================= SETUP =================
+// ================= PANEL COMANDO =================
 client.on("messageCreate", async msg => {
-  if (msg.content !== "!setup") return;
 
-  const g = msg.guild;
-  await msg.reply("⚙️ Configurando servidor...");
+  if (msg.content === "!panel-anuncios") {
 
-  // LIMPIAR
-  for (const ch of g.channels.cache.values()) {
-    try { await ch.delete(); } catch {}
+    if (!msg.member.permissions.has("Administrator"))
+      return msg.reply("❌ No tienes permiso");
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("crear_anuncio")
+        .setLabel("📢 Crear Anuncio")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    const embed = new EmbedBuilder()
+      .setColor("#7a00ff")
+      .setTitle("📢 Panel de Anuncios")
+      .setDescription("Usa el botón para crear anuncios");
+
+    msg.channel.send({ embeds: [embed], components: [row] });
   }
 
-  for (const r of g.roles.cache.values()) {
-    if (r.name === "@everyone") continue;
-    try { await r.delete(); } catch {}
+  // ===== SETUP =====
+  if (msg.content === "!setup") {
+
+    const g = msg.guild;
+
+    await msg.reply("⚙️ Configurando...");
+
+    for (const ch of g.channels.cache.values()) {
+      try { await ch.delete(); } catch {}
+    }
+
+    for (const r of g.roles.cache.values()) {
+      if (r.name !== "@everyone") {
+        try { await r.delete(); } catch {}
+      }
+    }
+
+    const owner = await g.roles.create({ name: "👑 Owner", permissions: ["Administrator"] });
+    const member = await g.roles.create({ name: "👤 Miembro" });
+
+    await msg.member.roles.add(owner);
+
+    const info = await g.channels.create({ name: "📌 INFO", type: ChannelType.GuildCategory });
+    const general = await g.channels.create({ name: "💬 GENERAL", type: ChannelType.GuildCategory });
+    const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
+
+    await g.channels.create({ name: "📢・bienvenida", parent: info.id });
+    await g.channels.create({ name: "📢・anuncios", parent: info.id });
+
+    await g.channels.create({
+      name: "📜・staff-logs",
+      parent: staff.id,
+      permissionOverwrites: [
+        { id: g.roles.everyone, deny: ["ViewChannel"] },
+        { id: owner.id, allow: ["ViewChannel"] }
+      ]
+    });
+
+    msg.channel.send("🔥 SETUP COMPLETO");
   }
-
-  // ROLES
-  const owner = await g.roles.create({ name: "👑 Owner", permissions: ["Administrator"] });
-  const admin = await g.roles.create({ name: "🔥 Admin" });
-  const mod = await g.roles.create({ name: "🛠 Mod" });
-  const member = await g.roles.create({ name: "👤 Miembro" });
-
-  await msg.member.roles.add(owner);
-
-  // CATEGORIAS
-  const info = await g.channels.create({ name: "📌 INFO", type: ChannelType.GuildCategory });
-  const general = await g.channels.create({ name: "💬 GENERAL", type: ChannelType.GuildCategory });
-  const media = await g.channels.create({ name: "📸 MEDIA", type: ChannelType.GuildCategory });
-  const games = await g.channels.create({ name: "🎮 JUEGOS", type: ChannelType.GuildCategory });
-  const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
-
-  async function ch(name, parent, text) {
-    const c = await g.channels.create({ name, parent });
-    const embed = new EmbedBuilder().setDescription(text).setColor("#2b2d31");
-    c.send({ embeds: [embed] });
-  }
-
-  await ch("📢・bienvenida", info.id, "🌙 Bienvenido a Lunaris");
-  await ch("💬・general", general.id, "💬 Chat principal");
-  await ch("💰・economia", general.id, "💰 Usa /work /balance");
-  await ch("📸・fotos", media.id, "📸 Comparte fotos");
-  await ch("🎮・general-gaming", games.id, "🎮 Gaming");
-
-  await g.channels.create({ name: "🔊 General", type: ChannelType.GuildVoice, parent: general.id });
-
-  await g.channels.create({
-    name: "📜・staff-logs",
-    parent: staff.id,
-    permissionOverwrites: [
-      { id: g.roles.everyone, deny: ["ViewChannel"] },
-      { id: owner.id, allow: ["ViewChannel"] }
-    ]
-  });
-
-  msg.channel.send("🔥 SETUP COMPLETO");
 });
 
-// ================= BIENVENIDA PRO =================
+// ================= BIENVENIDA =================
 client.on("guildMemberAdd", async member => {
+
   const welcome = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
   const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
 
@@ -182,24 +237,21 @@ client.on("guildMemberAdd", async member => {
       name: `Bienvenido a ${member.guild.name}`,
       iconURL: member.guild.iconURL({ dynamic: true })
     })
-    .setDescription(`✨ ${member} acaba de unirse\n\n📜 Lee las reglas y disfruta`)
+    .setDescription(`✨ ${member} se unió al servidor`)
     .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
     .setImage("https://i.imgur.com/8Km9tLL.png")
-    .addFields(
-      { name: "Usuario", value: member.user.tag, inline: true },
-      { name: "ID", value: member.id, inline: true }
-    )
     .setTimestamp();
 
   welcome?.send({ content: `👋 ${member}`, embeds: [embed] });
 
-  const log = new EmbedBuilder()
-    .setColor("Green")
-    .setTitle("📥 Member Joined")
-    .setDescription(member.user.tag)
-    .setTimestamp();
-
-  logs?.send({ embeds: [log] });
+  logs?.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("Green")
+        .setTitle("📥 Member Joined")
+        .setDescription(member.user.tag)
+    ]
+  });
 });
 
 // ================= LOGS =================
@@ -208,40 +260,14 @@ client.on("messageDelete", async m => {
 
   const logs = m.guild.channels.cache.find(c => c.name.includes("staff-logs"));
 
-  const embed = new EmbedBuilder()
-    .setColor("#ff4d4d")
-    .setTitle("🗑️ Mensaje eliminado")
-    .addFields(
-      { name: "Usuario", value: m.author.tag },
-      { name: "Mensaje", value: m.content || "Sin texto" }
-    )
-    .setTimestamp();
-
-  logs?.send({ embeds: [embed] });
-});
-
-client.on("guildMemberRemove", async member => {
-  const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
-
-  const embed = new EmbedBuilder()
-    .setColor("Orange")
-    .setTitle("📤 Member Left")
-    .setDescription(member.user.tag)
-    .setTimestamp();
-
-  logs?.send({ embeds: [embed] });
-});
-
-client.on("guildBanAdd", async ban => {
-  const logs = ban.guild.channels.cache.find(c => c.name.includes("staff-logs"));
-
-  const embed = new EmbedBuilder()
-    .setColor("Purple")
-    .setTitle("🔨 Usuario baneado")
-    .setDescription(ban.user.tag)
-    .setTimestamp();
-
-  logs?.send({ embeds: [embed] });
+  logs?.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("Red")
+        .setTitle("🗑️ Mensaje eliminado")
+        .setDescription(`${m.author.tag}: ${m.content || "Sin texto"}`)
+    ]
+  });
 });
 
 client.login(process.env.TOKEN);
