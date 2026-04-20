@@ -25,6 +25,9 @@ const {
   PermissionsBitField
 } = require("discord.js");
 
+// ================= CANVAS =================
+const { createCanvas, loadImage } = require("canvas");
+
 // ================= DATABASE =================
 const sqlite3 = require("sqlite3").verbose();
 const db = new sqlite3.Database("./economy.db");
@@ -85,7 +88,6 @@ client.once("ready", async () => {
 client.on("interactionCreate", async i => {
 
   if (i.isChatInputCommand()) {
-
     const user = i.user.id;
 
     if (i.commandName === "work") {
@@ -113,129 +115,59 @@ client.on("interactionCreate", async i => {
     }
   }
 
-  // PANEL ANUNCIOS PRO
+  // PANEL ANUNCIOS
   if (i.isButton() && i.customId === "crear_anuncio") {
 
-    if (!i.member.permissions.has(PermissionsBitField.Flags.Administrator))
-      return i.reply({ content: "❌ No tienes permiso", ephemeral: true });
-
     const modal = new ModalBuilder()
-      .setCustomId("modal_anuncio_pro")
+      .setCustomId("modal_anuncio")
       .setTitle("📢 Crear anuncio");
 
-    const titulo = new TextInputBuilder()
-      .setCustomId("titulo")
-      .setLabel("Título")
-      .setStyle(TextInputStyle.Short);
-
-    const mensaje = new TextInputBuilder()
-      .setCustomId("mensaje")
-      .setLabel("Mensaje")
-      .setStyle(TextInputStyle.Paragraph);
-
-    const imagen = new TextInputBuilder()
-      .setCustomId("imagen")
-      .setLabel("URL Imagen (opcional)")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(false);
-
     modal.addComponents(
-      new ActionRowBuilder().addComponents(titulo),
-      new ActionRowBuilder().addComponents(mensaje),
-      new ActionRowBuilder().addComponents(imagen)
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("titulo").setLabel("Título").setStyle(TextInputStyle.Short)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("mensaje").setLabel("Mensaje").setStyle(TextInputStyle.Paragraph)
+      )
     );
 
     await i.showModal(modal);
   }
 
-  if (i.isModalSubmit() && i.customId === "modal_anuncio_pro") {
-
-    const titulo = i.fields.getTextInputValue("titulo");
-    const mensaje = i.fields.getTextInputValue("mensaje");
-    const imagen = i.fields.getTextInputValue("imagen");
+  if (i.isModalSubmit() && i.customId === "modal_anuncio") {
 
     const canal = i.guild.channels.cache.find(c => c.name.includes("anuncios"));
 
-    const embed = new EmbedBuilder()
-      .setColor("#7a00ff")
-      .setTitle(`📢 ${titulo}`)
-      .setDescription(mensaje)
-      .setFooter({ text: `Lunaris • ${i.user.tag}` })
-      .setTimestamp();
-
-    if (imagen) embed.setImage(imagen);
-
     canal?.send({
       content: "@everyone",
-      embeds: [embed]
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#7a00ff")
+          .setTitle(i.fields.getTextInputValue("titulo"))
+          .setDescription(i.fields.getTextInputValue("mensaje"))
+      ]
     });
 
     i.reply({ content: "✅ Anuncio enviado", ephemeral: true });
   }
 });
 
-// ================= PANEL + SETUP =================
+// ================= PANEL =================
 client.on("messageCreate", async msg => {
 
   if (msg.content === "!panel-anuncios") {
 
-    if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
-      return msg.reply("❌ No tienes permiso");
-
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("crear_anuncio")
-        .setLabel("📢 Crear Anuncio")
+        .setLabel("📢 Crear anuncio")
         .setStyle(ButtonStyle.Primary)
     );
 
     msg.channel.send({
-      embeds: [new EmbedBuilder().setTitle("📢 Panel de Anuncios")],
+      embeds: [new EmbedBuilder().setTitle("Panel de anuncios")],
       components: [row]
     });
-  }
-
-  if (msg.content === "!setup") {
-
-    const g = msg.guild;
-
-    await msg.reply("⚙️ Configurando...");
-
-    for (const ch of g.channels.cache.values()) {
-      try { await ch.delete(); } catch {}
-    }
-
-    for (const r of g.roles.cache.values()) {
-      if (r.name !== "@everyone") {
-        try { await r.delete(); } catch {}
-      }
-    }
-
-    const owner = await g.roles.create({
-      name: "👑 Owner",
-      permissions: [PermissionsBitField.Flags.Administrator]
-    });
-
-    const member = await g.roles.create({ name: "👤 Miembro" });
-
-    await msg.member.roles.add(owner);
-
-    const info = await g.channels.create({ name: "📌 INFO", type: ChannelType.GuildCategory });
-    const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
-
-    await g.channels.create({ name: "📢・bienvenida", parent: info.id });
-    await g.channels.create({ name: "📢・anuncios", parent: info.id });
-
-    await g.channels.create({
-      name: "📜・staff-logs",
-      parent: staff.id,
-      permissionOverwrites: [
-        { id: g.roles.everyone, deny: ["ViewChannel"] },
-        { id: owner.id, allow: ["ViewChannel"] }
-      ]
-    });
-
-    msg.channel.send("🔥 SETUP COMPLETO");
   }
 });
 
@@ -245,69 +177,69 @@ client.on("guildMemberAdd", async member => {
   const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
   const welcome = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
 
+  // ANTI RAID
   const now = Date.now();
   const guildId = member.guild.id;
 
   if (!joinTracker.has(guildId)) joinTracker.set(guildId, []);
-
   const joins = joinTracker.get(guildId);
-  joins.push(now);
 
+  joins.push(now);
   const recent = joins.filter(t => now - t < 10000);
   joinTracker.set(guildId, recent);
 
   if (recent.length >= 5 && !antiRaidActive) {
-
     antiRaidActive = true;
 
-    member.guild.channels.cache.forEach(ch => {
-      ch.permissionOverwrites.edit(member.guild.roles.everyone, {
-        SendMessages: false
-      }).catch(() => {});
-    });
-
     logs?.send({
-      embeds: [new EmbedBuilder().setColor("Red").setTitle("🚨 ANTI RAID ACTIVADO")]
+      embeds: [new EmbedBuilder().setColor("Red").setTitle("🚨 ANTI RAID")]
     });
 
-    setTimeout(() => {
-      antiRaidActive = false;
-
-      member.guild.channels.cache.forEach(ch => {
-        ch.permissionOverwrites.edit(member.guild.roles.everyone, {
-          SendMessages: true
-        }).catch(() => {});
-      });
-
-      logs?.send({
-        embeds: [new EmbedBuilder().setColor("Green").setTitle("✅ Anti-raid desactivado")]
-      });
-
-    }, 60000);
+    setTimeout(() => antiRaidActive = false, 60000);
   }
 
+  // AUTOROL
   const role = member.guild.roles.cache.find(r => r.name.includes("Miembro"));
   if (role) member.roles.add(role);
 
-  const imageURL = `https://api.popcat.xyz/welcomecard?background=https://cdn.discordapp.com/attachments/1495637775716978688/1495812926047518740/diana-y-leona.png&text1=${encodeURIComponent(member.user.username)}&text2=Bienvenido&text3=${member.guild.name}&avatar=${member.user.displayAvatarURL({ extension: "png" })}`;
+  // CANVAS
+  const canvas = createCanvas(1024, 500);
+  const ctx = canvas.getContext("2d");
+
+  const background = await loadImage("https://cdn.discordapp.com/attachments/1495637775716978688/1495812926047518740/diana-y-leona.png");
+  ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 50px sans-serif";
+  ctx.fillText("BIENVENIDO", 350, 150);
+
+  ctx.font = "40px sans-serif";
+  ctx.fillText(member.user.username, 350, 220);
+
+  const avatar = await loadImage(member.user.displayAvatarURL({ extension: "png" }));
+
+  ctx.beginPath();
+  ctx.arc(150, 250, 100, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+
+  ctx.drawImage(avatar, 50, 150, 200, 200);
+
+  const attachment = {
+    files: [{ attachment: canvas.toBuffer(), name: "welcome.png" }]
+  };
 
   welcome?.send({
     content: `👋 ${member}`,
-    embeds: [
-      new EmbedBuilder()
-        .setColor("#7a00ff")
-        .setTitle("🌙 Bienvenido")
-        .setImage(imageURL)
-    ]
+    embeds: [new EmbedBuilder().setImage("attachment://welcome.png")],
+    files: attachment.files
   });
 
   logs?.send({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("Green")
-        .setTitle("📥 Usuario entró")
-        .setDescription(member.user.tag)
-    ]
+    embeds: [new EmbedBuilder().setColor("Green").setTitle("Usuario entró")]
   });
 });
 
@@ -321,8 +253,8 @@ client.on("messageDelete", async m => {
     embeds: [
       new EmbedBuilder()
         .setColor("Red")
-        .setTitle("🗑️ Mensaje eliminado")
-        .setDescription(`${m.author.tag}: ${m.content || "Sin texto"}`)
+        .setTitle("Mensaje eliminado")
+        .setDescription(m.content || "Sin texto")
     ]
   });
 });
