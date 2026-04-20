@@ -63,6 +63,10 @@ const client = new Client({
 
 const cooldowns = new Map();
 
+// ================= ANTI RAID =================
+let joinTracker = new Map();
+let antiRaidActive = false;
+
 // ================= READY =================
 client.once("ready", async () => {
   console.log(`🔥 ${client.user.tag} ONLINE`);
@@ -81,6 +85,7 @@ client.once("ready", async () => {
 client.on("interactionCreate", async i => {
 
   if (i.isChatInputCommand()) {
+
     const user = i.user.id;
 
     if (i.commandName === "work") {
@@ -169,7 +174,7 @@ client.on("interactionCreate", async i => {
   }
 });
 
-// ================= PANEL =================
+// ================= PANEL + SETUP =================
 client.on("messageCreate", async msg => {
 
   if (msg.content === "!panel-anuncios") {
@@ -184,35 +189,116 @@ client.on("messageCreate", async msg => {
         .setStyle(ButtonStyle.Primary)
     );
 
-    const embed = new EmbedBuilder()
-      .setColor("#7a00ff")
-      .setTitle("📢 Panel de Anuncios")
-      .setDescription("Usa el botón para crear anuncios");
+    msg.channel.send({
+      embeds: [new EmbedBuilder().setTitle("📢 Panel de Anuncios")],
+      components: [row]
+    });
+  }
 
-    msg.channel.send({ embeds: [embed], components: [row] });
+  if (msg.content === "!setup") {
+
+    const g = msg.guild;
+
+    await msg.reply("⚙️ Configurando...");
+
+    for (const ch of g.channels.cache.values()) {
+      try { await ch.delete(); } catch {}
+    }
+
+    for (const r of g.roles.cache.values()) {
+      if (r.name !== "@everyone") {
+        try { await r.delete(); } catch {}
+      }
+    }
+
+    const owner = await g.roles.create({
+      name: "👑 Owner",
+      permissions: [PermissionsBitField.Flags.Administrator]
+    });
+
+    const member = await g.roles.create({ name: "👤 Miembro" });
+
+    await msg.member.roles.add(owner);
+
+    const info = await g.channels.create({ name: "📌 INFO", type: ChannelType.GuildCategory });
+    const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
+
+    await g.channels.create({ name: "📢・bienvenida", parent: info.id });
+    await g.channels.create({ name: "📢・anuncios", parent: info.id });
+
+    await g.channels.create({
+      name: "📜・staff-logs",
+      parent: staff.id,
+      permissionOverwrites: [
+        { id: g.roles.everyone, deny: ["ViewChannel"] },
+        { id: owner.id, allow: ["ViewChannel"] }
+      ]
+    });
+
+    msg.channel.send("🔥 SETUP COMPLETO");
   }
 });
 
-// ================= BIENVENIDA ANIMADA =================
+// ================= BIENVENIDA + ANTI RAID =================
 client.on("guildMemberAdd", async member => {
 
-  const welcome = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
   const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
+  const welcome = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
+
+  const now = Date.now();
+  const guildId = member.guild.id;
+
+  if (!joinTracker.has(guildId)) joinTracker.set(guildId, []);
+
+  const joins = joinTracker.get(guildId);
+  joins.push(now);
+
+  const recent = joins.filter(t => now - t < 10000);
+  joinTracker.set(guildId, recent);
+
+  if (recent.length >= 5 && !antiRaidActive) {
+
+    antiRaidActive = true;
+
+    member.guild.channels.cache.forEach(ch => {
+      ch.permissionOverwrites.edit(member.guild.roles.everyone, {
+        SendMessages: false
+      }).catch(() => {});
+    });
+
+    logs?.send({
+      embeds: [new EmbedBuilder().setColor("Red").setTitle("🚨 ANTI RAID ACTIVADO")]
+    });
+
+    setTimeout(() => {
+      antiRaidActive = false;
+
+      member.guild.channels.cache.forEach(ch => {
+        ch.permissionOverwrites.edit(member.guild.roles.everyone, {
+          SendMessages: true
+        }).catch(() => {});
+      });
+
+      logs?.send({
+        embeds: [new EmbedBuilder().setColor("Green").setTitle("✅ Anti-raid desactivado")]
+      });
+
+    }, 60000);
+  }
 
   const role = member.guild.roles.cache.find(r => r.name.includes("Miembro"));
   if (role) member.roles.add(role);
 
   const imageURL = `https://api.popcat.xyz/welcomecard?background=https://cdn.discordapp.com/attachments/1495637775716978688/1495812926047518740/diana-y-leona.png&text1=${encodeURIComponent(member.user.username)}&text2=Bienvenido&text3=${member.guild.name}&avatar=${member.user.displayAvatarURL({ extension: "png" })}`;
 
-  const embed = new EmbedBuilder()
-    .setColor("#7a00ff")
-    .setTitle("🌙 Bienvenido a Lunaris")
-    .setImage(imageURL)
-    .setTimestamp();
-
   welcome?.send({
-    content: `👋 Bienvenido ${member}`,
-    embeds: [embed]
+    content: `👋 ${member}`,
+    embeds: [
+      new EmbedBuilder()
+        .setColor("#7a00ff")
+        .setTitle("🌙 Bienvenido")
+        .setImage(imageURL)
+    ]
   });
 
   logs?.send({
