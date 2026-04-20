@@ -21,38 +21,33 @@ const {
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle
+  TextInputStyle,
+  PermissionsBitField
 } = require("discord.js");
 
 // ================= DATABASE =================
 const sqlite3 = require("sqlite3").verbose();
-const database = new sqlite3.Database("./economy.db");
+const db = new sqlite3.Database("./economy.db");
 
-database.run(`
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
-  coins INTEGER DEFAULT 0
-)
-`);
+db.run(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, coins INTEGER DEFAULT 0)`);
 
 function getCoins(id) {
-  return new Promise((resolve) => {
-    database.get("SELECT coins FROM users WHERE id = ?", [id], (err, row) => {
-      if (!row) {
-        database.run("INSERT INTO users (id, coins) VALUES (?, 0)", [id]);
-        return resolve(0);
+  return new Promise(res => {
+    db.get("SELECT coins FROM users WHERE id=?", [id], (e, r) => {
+      if (!r) {
+        db.run("INSERT INTO users (id, coins) VALUES (?,0)", [id]);
+        return res(0);
       }
-      resolve(row.coins);
+      res(r.coins);
     });
   });
 }
 
 function addCoins(id, amount) {
-  database.run(`
+  db.run(`
     INSERT INTO users (id, coins)
-    VALUES (?, ?)
-    ON CONFLICT(id)
-    DO UPDATE SET coins = coins + ?
+    VALUES (?,?)
+    ON CONFLICT(id) DO UPDATE SET coins = coins + ?
   `, [id, amount, amount]);
 }
 
@@ -85,7 +80,7 @@ client.once("ready", async () => {
 // ================= INTERACTIONS =================
 client.on("interactionCreate", async i => {
 
-  // ===== SLASH =====
+  // ===== ECONOMÍA =====
   if (i.isChatInputCommand()) {
 
     const user = i.user.id;
@@ -115,43 +110,63 @@ client.on("interactionCreate", async i => {
     }
   }
 
-  // ===== BOTÓN PANEL =====
+  // ===== PANEL BOTÓN =====
   if (i.isButton() && i.customId === "crear_anuncio") {
 
-    if (!i.member.permissions.has("Administrator"))
+    if (!i.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return i.reply({ content: "❌ No tienes permiso", ephemeral: true });
 
     const modal = new ModalBuilder()
-      .setCustomId("modal_anuncio")
-      .setTitle("Crear anuncio");
+      .setCustomId("modal_anuncio_pro")
+      .setTitle("📢 Crear anuncio");
 
-    const input = new TextInputBuilder()
+    const titulo = new TextInputBuilder()
+      .setCustomId("titulo")
+      .setLabel("Título")
+      .setStyle(TextInputStyle.Short);
+
+    const mensaje = new TextInputBuilder()
       .setCustomId("mensaje")
-      .setLabel("Escribe tu anuncio")
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(true);
+      .setLabel("Mensaje")
+      .setStyle(TextInputStyle.Paragraph);
 
-    const row = new ActionRowBuilder().addComponents(input);
-    modal.addComponents(row);
+    const imagen = new TextInputBuilder()
+      .setCustomId("imagen")
+      .setLabel("URL Imagen (opcional)")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(titulo),
+      new ActionRowBuilder().addComponents(mensaje),
+      new ActionRowBuilder().addComponents(imagen)
+    );
 
     await i.showModal(modal);
   }
 
   // ===== MODAL =====
-  if (i.isModalSubmit() && i.customId === "modal_anuncio") {
+  if (i.isModalSubmit() && i.customId === "modal_anuncio_pro") {
 
+    const titulo = i.fields.getTextInputValue("titulo");
     const mensaje = i.fields.getTextInputValue("mensaje");
+    const imagen = i.fields.getTextInputValue("imagen");
 
     const canal = i.guild.channels.cache.find(c => c.name.includes("anuncios"));
 
     const embed = new EmbedBuilder()
       .setColor("#7a00ff")
-      .setTitle("📢 Anuncio")
+      .setTitle(`📢 ${titulo}`)
       .setDescription(mensaje)
-      .setFooter({ text: `Enviado por ${i.user.tag}` })
+      .setFooter({ text: `Lunaris • ${i.user.tag}` })
       .setTimestamp();
 
-    canal?.send({ embeds: [embed] });
+    if (imagen) embed.setImage(imagen);
+
+    canal?.send({
+      content: "@everyone",
+      embeds: [embed]
+    });
 
     i.reply({ content: "✅ Anuncio enviado", ephemeral: true });
   }
@@ -162,7 +177,7 @@ client.on("messageCreate", async msg => {
 
   if (msg.content === "!panel-anuncios") {
 
-    if (!msg.member.permissions.has("Administrator"))
+    if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return msg.reply("❌ No tienes permiso");
 
     const row = new ActionRowBuilder().addComponents(
@@ -185,7 +200,7 @@ client.on("messageCreate", async msg => {
 
     const g = msg.guild;
 
-    await msg.reply("⚙️ Configurando...");
+    await msg.reply("⚙️ Configurando servidor...");
 
     for (const ch of g.channels.cache.values()) {
       try { await ch.delete(); } catch {}
@@ -197,7 +212,11 @@ client.on("messageCreate", async msg => {
       }
     }
 
-    const owner = await g.roles.create({ name: "👑 Owner", permissions: ["Administrator"] });
+    const owner = await g.roles.create({
+      name: "👑 Owner",
+      permissions: [PermissionsBitField.Flags.Administrator]
+    });
+
     const member = await g.roles.create({ name: "👤 Miembro" });
 
     await msg.member.roles.add(owner);
@@ -235,10 +254,10 @@ client.on("guildMemberAdd", async member => {
     .setColor("#2b2d31")
     .setAuthor({
       name: `Bienvenido a ${member.guild.name}`,
-      iconURL: member.guild.iconURL({ dynamic: true })
+      iconURL: member.guild.iconURL()
     })
     .setDescription(`✨ ${member} se unió al servidor`)
-    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+    .setThumbnail(member.user.displayAvatarURL())
     .setImage("https://i.imgur.com/8Km9tLL.png")
     .setTimestamp();
 
@@ -266,6 +285,19 @@ client.on("messageDelete", async m => {
         .setColor("Red")
         .setTitle("🗑️ Mensaje eliminado")
         .setDescription(`${m.author.tag}: ${m.content || "Sin texto"}`)
+    ]
+  });
+});
+
+client.on("guildMemberRemove", async member => {
+  const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
+
+  logs?.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("Orange")
+        .setTitle("📤 Member Left")
+        .setDescription(member.user.tag)
     ]
   });
 });
