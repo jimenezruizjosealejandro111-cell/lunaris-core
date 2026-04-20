@@ -15,9 +15,6 @@ const {
   Client,
   GatewayIntentBits,
   EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   ChannelType,
   REST,
   Routes,
@@ -75,7 +72,7 @@ client.once("ready", async () => {
   const commands = [
     new SlashCommandBuilder().setName("work").setDescription("Trabajar"),
     new SlashCommandBuilder().setName("balance").setDescription("Ver dinero"),
-    new SlashCommandBuilder().setName("daily").setDescription("Recompensa diaria"),
+    new SlashCommandBuilder().setName("daily").setDescription("Recompensa diaria")
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
@@ -84,50 +81,32 @@ client.once("ready", async () => {
 
 // ================= SLASH =================
 client.on("interactionCreate", async i => {
-  if (!i.isChatInputCommand() && !i.isButton()) return;
+  if (!i.isChatInputCommand()) return;
 
   const user = i.user.id;
 
-  if (i.isChatInputCommand()) {
+  if (i.commandName === "work") {
+    const now = Date.now();
+    const last = cooldowns.get(user) || 0;
 
-    if (i.commandName === "work") {
-      const now = Date.now();
-      const last = cooldowns.get(user) || 0;
+    if (now - last < 1800000)
+      return i.reply({ content: "⏳ Espera 30 min", ephemeral: true });
 
-      if (now - last < 1800000)
-        return i.reply({ content: "⏳ Espera 30 min", ephemeral: true });
+    const money = Math.floor(Math.random() * 200) + 50;
+    addCoins(user, money);
+    cooldowns.set(user, now);
 
-      const money = Math.floor(Math.random() * 200) + 50;
-      addCoins(user, money);
-      cooldowns.set(user, now);
-
-      return i.reply(`💼 Ganaste ${money}`);
-    }
-
-    if (i.commandName === "balance") {
-      const coins = await getCoins(user);
-      return i.reply(`💰 ${coins} coins`);
-    }
-
-    if (i.commandName === "daily") {
-      addCoins(user, 500);
-      return i.reply("🎁 +500 coins");
-    }
+    return i.reply(`💼 Ganaste ${money}`);
   }
 
-  // TICKETS
-  if (i.isButton() && i.customId === "ticket") {
-    const ch = await i.guild.channels.create({
-      name: `ticket-${i.user.username}`,
-      type: ChannelType.GuildText,
-      permissionOverwrites: [
-        { id: i.guild.roles.everyone, deny: ["ViewChannel"] },
-        { id: i.user.id, allow: ["ViewChannel"] }
-      ]
-    });
+  if (i.commandName === "balance") {
+    const coins = await getCoins(user);
+    return i.reply(`💰 ${coins} coins`);
+  }
 
-    ch.send("🎟 Ticket creado, el staff te responderá pronto.");
-    i.reply({ content: "✅ Ticket creado", ephemeral: true });
+  if (i.commandName === "daily") {
+    addCoins(user, 500);
+    return i.reply("🎁 +500 coins");
   }
 });
 
@@ -163,11 +142,10 @@ client.on("messageCreate", async msg => {
   const games = await g.channels.create({ name: "🎮 JUEGOS", type: ChannelType.GuildCategory });
   const staff = await g.channels.create({ name: "🛠 STAFF", type: ChannelType.GuildCategory });
 
-  // CANALES
   async function ch(name, parent, text) {
     const c = await g.channels.create({ name, parent });
     const embed = new EmbedBuilder().setDescription(text).setColor("#2b2d31");
-    c.send({ embeds: [embed] }); // 🔊 ahora sí notifica
+    c.send({ embeds: [embed] });
   }
 
   await ch("📢・bienvenida", info.id, "🌙 Bienvenido a Lunaris");
@@ -190,7 +168,7 @@ client.on("messageCreate", async msg => {
   msg.channel.send("🔥 SETUP COMPLETO");
 });
 
-// ================= BIENVENIDA + LOG =================
+// ================= BIENVENIDA PRO =================
 client.on("guildMemberAdd", async member => {
   const welcome = member.guild.channels.cache.find(c => c.name.includes("bienvenida"));
   const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
@@ -199,34 +177,68 @@ client.on("guildMemberAdd", async member => {
   if (role) member.roles.add(role);
 
   const embed = new EmbedBuilder()
-    .setColor("#7a00ff")
-    .setTitle("🌙 Bienvenido a Lunaris")
-    .setDescription(`✨ ${member.user} ha llegado`)
+    .setColor("#2b2d31")
+    .setAuthor({
+      name: `Bienvenido a ${member.guild.name}`,
+      iconURL: member.guild.iconURL({ dynamic: true })
+    })
+    .setDescription(`✨ ${member} acaba de unirse\n\n📜 Lee las reglas y disfruta`)
     .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
     .setImage("https://i.imgur.com/8Km9tLL.png")
+    .addFields(
+      { name: "Usuario", value: member.user.tag, inline: true },
+      { name: "ID", value: member.id, inline: true }
+    )
     .setTimestamp();
 
-  welcome?.send({ embeds: [embed] });
+  welcome?.send({ content: `👋 ${member}`, embeds: [embed] });
 
-  const logEmbed = new EmbedBuilder()
+  const log = new EmbedBuilder()
     .setColor("Green")
-    .setTitle("📥 Usuario entró")
-    .setDescription(`${member.user.tag}`)
+    .setTitle("📥 Member Joined")
+    .setDescription(member.user.tag)
     .setTimestamp();
 
-  logs?.send({ embeds: [logEmbed] });
+  logs?.send({ embeds: [log] });
 });
 
-// ================= LOG MENSAJES =================
+// ================= LOGS =================
 client.on("messageDelete", async m => {
   if (!m.guild || m.author?.bot) return;
 
   const logs = m.guild.channels.cache.find(c => c.name.includes("staff-logs"));
 
   const embed = new EmbedBuilder()
-    .setColor("Red")
+    .setColor("#ff4d4d")
     .setTitle("🗑️ Mensaje eliminado")
-    .setDescription(`${m.author.tag}: ${m.content || "Sin texto"}`)
+    .addFields(
+      { name: "Usuario", value: m.author.tag },
+      { name: "Mensaje", value: m.content || "Sin texto" }
+    )
+    .setTimestamp();
+
+  logs?.send({ embeds: [embed] });
+});
+
+client.on("guildMemberRemove", async member => {
+  const logs = member.guild.channels.cache.find(c => c.name.includes("staff-logs"));
+
+  const embed = new EmbedBuilder()
+    .setColor("Orange")
+    .setTitle("📤 Member Left")
+    .setDescription(member.user.tag)
+    .setTimestamp();
+
+  logs?.send({ embeds: [embed] });
+});
+
+client.on("guildBanAdd", async ban => {
+  const logs = ban.guild.channels.cache.find(c => c.name.includes("staff-logs"));
+
+  const embed = new EmbedBuilder()
+    .setColor("Purple")
+    .setTitle("🔨 Usuario baneado")
+    .setDescription(ban.user.tag)
     .setTimestamp();
 
   logs?.send({ embeds: [embed] });
